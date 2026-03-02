@@ -17,9 +17,9 @@ WPF system tray app that lets you **switch between ALL supported Ethernet speeds
   </tr>
 </table>
 
-## 🔧 What's New in Version 1.2.1
-
-- **Self-contained build:** The .NET 8 runtime is now bundled inside the installer — no need to install .NET separately on the target machine.
+## 🔧 What's New in Version 1.2.2
+- Switched from self-contained to framework-dependent build Installer size reduced from ~50MB to ~3MB
+- Automatic .NET 8 runtime installation: if not already present on the target machine, the installer will silently download and install it before proceeding
 
 ## ✨ What's New in Version 1.2
 - **Real-time speed indicator:** The Settings window now shows your current link speed live.
