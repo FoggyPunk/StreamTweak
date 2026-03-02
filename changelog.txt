@@ -8,6 +8,7 @@ Version 2.0 - The "ReBrand Update" (02/03/2026)
 ------------------------------------------
 ✨ NEW FEATURES:
 • Added HDR toggle — easily enable or disable HDR directly from the app
+• Streaming Mode: Automatically throttles network to 1.0 Gbps on activation and restores your previous speed when disabled.
 • Displays current monitor resolution and refresh rate of the Host PC
 • Shows installed GPU model for quick hardware reference
 • Added tray icon tooltips explaining the meaning of network speed indicators
