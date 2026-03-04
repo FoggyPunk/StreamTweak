@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using Microsoft.Management.Infrastructure;
 
 namespace StreamTweak
 {
@@ -146,67 +147,37 @@ namespace StreamTweak
             return (0, 0, 0);
         }
 
-        public enum HdrState { NotSupported, Enabled, Disabled }
-
-        public static HdrState GetHdrState()
+        public static string GetGpuVram()
         {
             try
             {
-                // First try: Read from Windows registry (the authoritative source for HDR state)
-                try
-                {
-                    using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
-                        @"Software\Microsoft\Windows\CurrentVersion\VideoSettings");
+                using var session = CimSession.Create(null);
+                var instances = session.QueryInstances("root\\cimv2", "WQL",
+                    "SELECT AdapterRAM FROM Win32_VideoController");
 
-                    if (key != null)
+                foreach (var inst in instances)
+                {
+                    var ramValue = inst.CimInstanceProperties["AdapterRAM"].Value;
+                    if (ramValue != null && long.TryParse(ramValue.ToString(), out long bytes))
                     {
-                        var value = key.GetValue("EnableHDROutput");
-                        if (value != null)
+                        // Converti da bytes a GB
+                        double gb = bytes / (1024.0 * 1024.0 * 1024.0);
+                        if (gb >= 1)
+                            return $"{gb:F1} GB";
+                        else
                         {
-                            int hdrValue = Convert.ToInt32(value);
-                            if (hdrValue == 1)
-                                return HdrState.Enabled;
-                            else if (hdrValue == 0)
-                                return HdrState.Disabled;
+                            double mb = bytes / (1024.0 * 1024.0);
+                            return $"{mb:F0} MB";
                         }
                     }
                 }
-                catch { }
-
-                // Second try: Use DisplayConfig API to detect HDR support and state
-                if (GetPathsAndModes(out var paths, out var modes, out uint pathCount))
-                {
-                    if (pathCount > 0)
-                    {
-                        // Query the first active target to get HDR state
-                        for (int i = 0; i < (int)pathCount; i++)
-                        {
-                            var getColorInfo = new DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO();
-                            getColorInfo.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO;
-                            getColorInfo.header.size = (uint)Marshal.SizeOf<DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO>();
-                            getColorInfo.header.adapterId = paths[i].targetInfo.adapterId;
-                            getColorInfo.header.id = paths[i].targetInfo.id;
-
-                            int rc = DisplayConfigGetDeviceInfo(ref getColorInfo);
-                            if (rc == 0)
-                            {
-                                // Check if display supports HDR and its current state
-                                // value == 1 means HDR is enabled
-                                if (getColorInfo.value == 1)
-                                    return HdrState.Enabled;
-                                else if (getColorInfo.value == 0)
-                                    return HdrState.Disabled;
-                            }
-                        }
-                    }
-                }
-
-                return HdrState.NotSupported;
             }
-            catch { return HdrState.NotSupported; }
+            catch { }
+
+            return "Unknown";
         }
 
-        // Added missing GetPaths method to query active display paths
+         // Added missing GetPaths method to query active display paths
         private static bool GetPaths(out DISPLAYCONFIG_PATH_INFO[] paths, out uint pathCount)
         {
             paths = Array.Empty<DISPLAYCONFIG_PATH_INFO>();

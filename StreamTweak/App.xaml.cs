@@ -23,6 +23,16 @@ namespace StreamTweak
         private bool isStreamingModeActive = false;
         private string originalSpeedForStreaming = string.Empty;
 
+        // Auto-monitoring fields
+        private StreamingLogMonitor? logMonitor = null;
+        private bool isAutoStreamingActive = false;
+        private string? originalSpeedForAutoStreaming = null;
+        private bool isAutoStreamingEnabled = true;
+
+        // Smart inactivity timer to prevent loop
+        private System.Windows.Threading.DispatcherTimer? inactivityTimer = null;
+        private const int INACTIVITY_TIMEOUT_MS = 30000; // 30 seconds
+
         private string GetConfigPath()
         {
             string appFolder = System.IO.Path.Combine(
@@ -41,7 +51,9 @@ namespace StreamTweak
             tb = (TaskbarIcon)FindResource("MyNotifyIcon")!;
             UpdateIconBasedOnSpeed(false);
             UpdateStreamingMenuItem();
-            UpdateDisplayInfoMenuItems();
+
+            // Start automatic streaming mode monitoring
+            StartAutoStreamingMonitor();
         }
 
         private void LoadConfig()
@@ -64,6 +76,11 @@ namespace StreamTweak
 
                         if (root.TryGetProperty("OriginalSpeed", out JsonElement originalSpeedElement))
                             originalSpeedForStreaming = originalSpeedElement.GetString() ?? string.Empty;
+
+                        if (root.TryGetProperty("AutoStreamingEnabled", out JsonElement autoStreamingElement))
+                            isAutoStreamingEnabled = autoStreamingElement.GetBoolean();
+                        else
+                            isAutoStreamingEnabled = true;
                     }
                 }
             }
@@ -155,29 +172,6 @@ namespace StreamTweak
                 menuItem.Header = "Start Streaming Mode";
                 menuItem.IsEnabled = !IsCurrentSpeed1G();
             }
-        }
-
-        private void UpdateDisplayInfoMenuItems()
-        {
-            try
-            {
-                var (width, height, refreshRate) = DisplayHelper.GetPrimaryDisplayInfo();
-
-                var resItem = tb?.ContextMenu?.Items
-                    .OfType<MenuItem>()
-                    .FirstOrDefault(m => m.Header?.ToString()?.StartsWith("Resolution") == true);
-
-                var refItem = tb?.ContextMenu?.Items
-                    .OfType<MenuItem>()
-                    .FirstOrDefault(m => m.Header?.ToString()?.StartsWith("Refresh Rate") == true);
-
-                if (resItem != null)
-                    resItem.Header = width > 0 ? $"Resolution: {width} × {height}" : "Resolution: Unknown";
-
-                if (refItem != null)
-                    refItem.Header = refreshRate > 0 ? $"Refresh Rate: {refreshRate} Hz" : "Refresh Rate: Unknown";
-            }
-            catch { }
         }
 
         private void ApplySpeedFromTray(string speedKey)
@@ -273,6 +267,13 @@ Restart-NetAdapter -Name $adapterName -Confirm:$false
                 string? oneGbpsKey = Find1GbpsKey();
                 if (oneGbpsKey == null) return;
 
+                // Show adjustment alert
+                var alert = new StreamingAdjustmentAlert();
+                alert.Show();
+
+                // Wait 4 seconds to let user read the alert before disconnection
+                await Task.Delay(4000);
+
                 isStreamingModeActive = true;
                 SaveStreamingStateToConfig(true, originalSpeedForStreaming);
                 UpdateStreamingMenuItem();
@@ -313,6 +314,7 @@ Restart-NetAdapter -Name $adapterName -Confirm:$false
                 UpdateIconBasedOnSpeed(showNotification);
 
             UpdateStreamingMenuItem();
+            settingsWindow?.RefreshCurrentSpeedDisplay();
         }
 
         private void OpenSettings()
@@ -331,6 +333,16 @@ Restart-NetAdapter -Name $adapterName -Confirm:$false
                 {
                     LoadConfig();
                     UpdateStreamingMenuItem();
+                };
+
+                settingsWindow.AutoStreamingEnabledChanged += (s, args) =>
+                {
+                    LoadConfig();
+
+                    if (isAutoStreamingEnabled)
+                        StartAutoStreamingMonitor();
+                    else
+                        StopAutoStreamingMonitor();
                 };
 
                 settingsWindow.Closed += (s, args) =>
@@ -355,8 +367,229 @@ Restart-NetAdapter -Name $adapterName -Confirm:$false
 
         private void MenuExit_Click(object sender, RoutedEventArgs e)
         {
+            StopAutoStreamingMonitor();
             tb?.Dispose();
             Application.Current.Shutdown();
         }
+
+        #region Auto-Streaming Monitoring
+
+        private void StartAutoStreamingMonitor()
+        {
+            try
+            {
+                if (!isAutoStreamingEnabled)
+                    return;
+
+                if (logMonitor != null)
+                    return;
+
+                logMonitor = new StreamingLogMonitor();
+                logMonitor.StreamingEventDetected += LogMonitor_StreamingEventDetected;
+                logMonitor.StartMonitoring();
+            }
+            catch { }
+        }
+
+        private void StopAutoStreamingMonitor()
+        {
+            try
+            {
+                if (logMonitor != null)
+                {
+                    logMonitor.StreamingEventDetected -= LogMonitor_StreamingEventDetected;
+                    logMonitor.StopMonitoring();
+                    logMonitor.Dispose();
+                    logMonitor = null;
+                }
+            }
+            catch { }
+        }
+
+        private void LogMonitor_StreamingEventDetected(object? sender, StreamingLogMonitor.StreamingEventArgs e)
+        {
+            try
+            {
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    if (e.Event == LogParser.StreamingEvent.StreamStarted && !isAutoStreamingActive)
+                    {
+                        HandleAutoStreamStart();
+                    }
+                    else if (e.Event == LogParser.StreamingEvent.StreamStopped && isAutoStreamingActive)
+                    {
+                        // Only restore speed if inactivity timer is not running
+                        // If timer is running, it means the disconnect might be temporary (due to speed change)
+                        if (inactivityTimer == null || !inactivityTimer.IsEnabled)
+                        {
+                            HandleAutoStreamStop();
+                        }
+                        else
+                        {
+                            // Timer is running, ignore this disconnect - user might be reconnecting
+                            DebugLog("StreamStopped ignored: Inactivity timer still active (likely temporary disconnect)");
+                        }
+                    }
+                });
+            }
+            catch { }
+        }
+
+        private static void DebugLog(string message)
+        {
+            try
+            {
+                string debugLogPath = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "StreamTweak", "debug.log");
+
+                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(debugLogPath) ?? "");
+                File.AppendAllText(debugLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}{Environment.NewLine}");
+            }
+            catch { }
+        }
+
+        private async void HandleAutoStreamStart()
+        {
+            try
+            {
+                // Only apply if manual streaming mode is not active
+                if (isStreamingModeActive)
+                    return;
+
+                var ni = NetworkInterface.GetAllNetworkInterfaces()
+                    .FirstOrDefault(n => n.Name.Equals(adapterName, StringComparison.OrdinalIgnoreCase));
+
+                if (ni == null || ni.OperationalStatus != OperationalStatus.Up)
+                    return;
+
+                long mbps = ni.Speed / 1_000_000;
+
+                // Only adjust if speed is higher than 1 Gbps (e.g., 2.5Gbps or higher)
+                if (mbps < 1200)
+                    return;
+
+                // Save current speed before changing
+                var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
+                if (speeds != null)
+                {
+                    foreach (var kvp in speeds)
+                    {
+                        string kl = kvp.Key.ToLower();
+                        bool match = mbps >= 2000
+                            ? kl.Contains("2.5") || kl.Contains("2500")
+                            : kl.Contains(mbps.ToString());
+                        if (match) { originalSpeedForAutoStreaming = kvp.Key; break; }
+                    }
+                }
+
+                // Apply 1 Gbps
+                string? oneGbpsKey = Find1GbpsKey();
+                if (oneGbpsKey != null)
+                {
+                    // Show adjustment alert
+                    var alert = new StreamingAdjustmentAlert();
+                    alert.Show();
+
+                    // Wait 4 seconds to let user read the alert before disconnection
+                    await Task.Delay(4000);
+
+                    isAutoStreamingActive = true;
+                    isStreamingModeActive = true;
+                    ApplySpeedFromTray(oneGbpsKey);
+                    SaveStreamingStateToConfig(true, originalSpeedForAutoStreaming);
+
+                    // Start inactivity timer - prevents loop from temporary disconnects
+                    StartInactivityTimer();
+
+                    // Update UI
+                    UpdateStreamingMenuItem();
+                    await PollForIconUpdate(true);
+
+                    // Notify user via tooltip
+                    tb.ShowBalloonTip("Streaming Detected",
+                        $"Network speed automatically adjusted to 1 Gbps for optimal streaming.",
+                        BalloonIcon.Info);
+
+                    settingsWindow?.SyncStreamingState(true, originalSpeedForAutoStreaming);
+                }
+            }
+            catch { }
+        }
+
+        private async void HandleAutoStreamStop()
+        {
+            try
+            {
+                if (!isAutoStreamingActive)
+                    return;
+
+                if (!string.IsNullOrEmpty(originalSpeedForAutoStreaming))
+                {
+                    ApplySpeedFromTray(originalSpeedForAutoStreaming);
+                }
+
+                isAutoStreamingActive = false;
+                isStreamingModeActive = false;
+                originalSpeedForAutoStreaming = null;
+
+                // Stop inactivity timer when streaming stops
+                StopInactivityTimer();
+
+                // Update UI
+                UpdateStreamingMenuItem();
+                await PollForIconUpdate(true);
+                SaveStreamingStateToConfig(false, string.Empty);
+
+                tb.ShowBalloonTip("Streaming Ended",
+                    $"Network speed automatically restored.",
+                    BalloonIcon.Info);
+
+                settingsWindow?.SyncStreamingState(false, string.Empty);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Starts the inactivity timer to prevent disconnect loops
+        /// </summary>
+        private void StartInactivityTimer()
+        {
+            try
+            {
+                if (inactivityTimer == null)
+                {
+                    inactivityTimer = new System.Windows.Threading.DispatcherTimer();
+                    inactivityTimer.Interval = TimeSpan.FromMilliseconds(INACTIVITY_TIMEOUT_MS);
+                    inactivityTimer.Tick += (s, e) =>
+                    {
+                        StopInactivityTimer();
+                        DebugLog("Inactivity timer expired - no reconnection detected");
+                    };
+                }
+
+                inactivityTimer.Start();
+                DebugLog($"Inactivity timer started ({INACTIVITY_TIMEOUT_MS}ms)");
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Stops the inactivity timer
+        /// </summary>
+        private void StopInactivityTimer()
+        {
+            try
+            {
+                if (inactivityTimer != null)
+                {
+                    inactivityTimer.Stop();
+                    DebugLog("Inactivity timer stopped");
+                }
+            }
+            catch { }
+        }
+
+        #endregion
     }
 }

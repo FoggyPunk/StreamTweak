@@ -21,38 +21,18 @@ namespace StreamTweak
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, int[] attrValue, int attrSize);
         private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
 
-        #region Native display interop
-
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-        private struct DISPLAY_DEVICE
-        {
-            public int cb;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-            public string DeviceName;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-            public string DeviceString;
-            public int StateFlags;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-            public string DeviceID;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-            public string DeviceKey;
-        }
-
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern bool EnumDisplayDevices(string? lpDevice, int iDevNum,
-            ref DISPLAY_DEVICE lpDisplayDevice, int dwFlags);
-
-        #endregion
-
         private readonly string configFilePath;
         public bool HasAppliedChanges { get; private set; } = false;
         private Dictionary<string, string>? currentAdapterSpeeds;
         private bool isDarkMode = false;
         private bool isStreamingMode = false;
         private string originalSpeed = string.Empty;
+        private bool isAutoStreamingEnabled = true;
+        private string currentAdapterName = string.Empty;
 
         public event EventHandler? SpeedApplied;
         public event EventHandler? StreamingModeChanged;
+        public event EventHandler? AutoStreamingEnabledChanged;
 
         private static readonly SolidColorBrush StreamingStartBrush = new SolidColorBrush(Color.FromRgb(168, 213, 162));
         private static readonly SolidColorBrush StreamingStopBrush = new SolidColorBrush(Color.FromRgb(244, 168, 168));
@@ -79,57 +59,6 @@ namespace StreamTweak
             ApplySystemAccentColor();
             LoadConfig();
             LoadNetworkAdapters();
-            LoadDisplayInfo();
-        }
-
-        private void LoadDisplayInfo()
-        {
-            var (width, height, refreshRate) = DisplayHelper.GetPrimaryDisplayInfo();
-
-            ResolutionTextBlock.Text = width > 0 ? $"{width} × {height}" : "Unknown";
-            RefreshRateTextBlock.Text = refreshRate > 0 ? $"{refreshRate} Hz" : "Unknown";
-
-            PopulateGpuInfo();
-        }
-
-
-        private void PopulateGpuInfo()
-        {
-            try
-            {
-                string? gpuName = null;
-                try
-                {
-                    DISPLAY_DEVICE d = new DISPLAY_DEVICE();
-                    d.cb = Marshal.SizeOf(d);
-                    if (EnumDisplayDevices(null, 0, ref d, 0))
-                        gpuName = string.IsNullOrWhiteSpace(d.DeviceString) ? null : d.DeviceString.Trim();
-                }
-                catch { }
-
-                if (!string.IsNullOrWhiteSpace(gpuName))
-                {
-                    GpuTextBlock.Text = gpuName!;
-                    return;
-                }
-
-                // Fallback: WMI GPU name
-                using var session = CimSession.Create(null);
-                var instances = session.QueryInstances("root\\cimv2", "WQL",
-                    "SELECT Name FROM Win32_VideoController");
-                foreach (var inst in instances)
-                {
-                    var name = inst.CimInstanceProperties["Name"].Value?.ToString() ?? string.Empty;
-                    if (!string.IsNullOrWhiteSpace(name))
-                    {
-                        GpuTextBlock.Text = name;
-                        return;
-                    }
-                }
-
-                GpuTextBlock.Text = "Unknown";
-            }
-            catch { GpuTextBlock.Text = "Unknown"; }
         }
 
         public void SyncStreamingState(bool streamingActive, string originalSpeedKey)
@@ -322,11 +251,19 @@ namespace StreamTweak
 
                         if (root.TryGetProperty("OriginalSpeed", out JsonElement originalSpeedElement))
                             originalSpeed = originalSpeedElement.GetString() ?? string.Empty;
+
+                        if (root.TryGetProperty("AutoStreamingEnabled", out JsonElement autoStreamingElement))
+                            isAutoStreamingEnabled = autoStreamingElement.GetBoolean();
+                        else
+                            isAutoStreamingEnabled = true;
+
+                        AutoStreamingToggle.IsChecked = isAutoStreamingEnabled;
                     }
                 }
                 else
                 {
                     ToggleTheme(false);
+                    AutoStreamingToggle.IsChecked = true;
                 }
             }
             catch { ToggleTheme(false); }
@@ -387,6 +324,7 @@ namespace StreamTweak
                 string selectedAdapter = AdapterComboBox.SelectedItem.ToString() ?? string.Empty;
                 if (!string.IsNullOrEmpty(selectedAdapter) && selectedAdapter != "No active physical adapters found")
                 {
+                    currentAdapterName = selectedAdapter;
                     LoadAdapterSpeeds(selectedAdapter);
                     UpdateCurrentSpeedDisplay(selectedAdapter);
                     UpdateStreamingButtonAppearance();
@@ -427,7 +365,19 @@ namespace StreamTweak
             {
                 foreach (var speedKey in currentAdapterSpeeds.Keys)
                     if (speedKey != null) SpeedComboBox.Items.Add(speedKey);
-                SpeedComboBox.SelectedIndex = 0;
+
+                // Try to select 1Gbps as default, otherwise select first item
+                int selectedIndex = 0;
+                for (int i = 0; i < SpeedComboBox.Items.Count; i++)
+                {
+                    string item = SpeedComboBox.Items[i]?.ToString() ?? string.Empty;
+                    if (item.Contains("1") && item.Contains("Gbps"))
+                    {
+                        selectedIndex = i;
+                        break;
+                    }
+                }
+                SpeedComboBox.SelectedIndex = selectedIndex;
             }
             else
             {
@@ -597,5 +547,34 @@ Restart-NetAdapter -Name $adapterName -Confirm:$false
             ApplySpeedInternal(selectedSpeedKey);
             await RefreshSpeedAfterChange(selectedAdapter);
         }
-    }
+
+        private void AutoStreamingToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            isAutoStreamingEnabled = AutoStreamingToggle.IsChecked ?? true;
+            SaveAutoStreamingStateToConfig();
+            AutoStreamingEnabledChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void SaveAutoStreamingStateToConfig()
+        {
+            try
+            {
+                string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
+                var configData = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
+                                 ?? new Dictionary<string, object>();
+                configData["AutoStreamingEnabled"] = isAutoStreamingEnabled;
+                File.WriteAllText(configFilePath,
+                    JsonSerializer.Serialize(configData, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { }
+        }
+
+        public void RefreshCurrentSpeedDisplay()
+        {
+            if (!string.IsNullOrEmpty(currentAdapterName))
+            {
+                UpdateCurrentSpeedDisplay(currentAdapterName);
+            }
+        }
+     }
 }
