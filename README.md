@@ -37,7 +37,7 @@ Previous versions had to request administrator privileges every time the network
 - **Better State Management:** Seamless coordination between Auto Mode and Manual Mode
 
 ## 📖 The Technical Story Behind This Project
-This project was born out of a specific frustration in the cloud gaming community. When using game streaming software like **[Moonlight](https://github.com/moonlight-stream/moonlight-qt)** with **Sunshine** or **Apollo**, a known issue occurs if the host PC and the client have mismatched Ethernet link speeds.
+This project was born out of a specific frustration in the cloud gaming community. When using game streaming software like **[Moonlight](https://github.com/moonlight-stream/moonlight-qt)** with **[Sunshine](https://github.com/LizardByte/Sunshine)** or **[Apollo](https://github.com/ClassicOldSong/Apollo)**, a known issue occurs if the host PC and the client have mismatched Ethernet link speeds.
 
 Due to how UDP packet buffering works on network switches, this mismatch often leads to severe packet loss and "Slow connection to PC" errors. You can read more about this technical bottleneck on the **[Moonlight GitHub Issue #714](https://github.com/moonlight-stream/moonlight-qt/issues/714)** and in this highly discussed **[Reddit thread](https://www.reddit.com/r/MoonlightStreaming/comments/1m35zo7/fix_moonlight_streaming_issues_on_25gbps_lan_try/)**.
 
