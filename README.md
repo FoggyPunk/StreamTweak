@@ -8,9 +8,9 @@
 > ⚠️ **Browser Warning:** When downloading the installer, Edge or Chrome may show a security warning. This is a **false positive** caused by the lack of a paid code-signing certificate — common for open-source projects. Click **"Keep"** or **"Keep anyway"** to proceed. The source code is fully available here for inspection.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/32df7556-70bf-479c-99fe-e219030e5dcf">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/f4903e2f-7fe1-4d3e-891c-04e9b55b4674">
-  <img width="406" height="454" alt="smarttweak" src="https://github.com/user-attachments/assets/f4903e2f-7fe1-4d3e-891c-04e9b55b4674" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/e3753c38-38ec-4b01-acda-84886812e1fd">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/cae072e8-a704-4115-a6a2-347b8d74c5ce">
+  <img width="482" height="548" alt="StreamTweak" src="https://github.com/user-attachments/assets/cae072e8-a704-4115-a6a2-347b8d74c5ce">
 </picture>
 
 ## 🚀 The ReBrand: From Network Speed Toggle to StreamTweak 🎮
