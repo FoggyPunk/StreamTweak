@@ -33,7 +33,7 @@ Previous versions had to request administrator privileges every time the network
 ## ✨ What's New in Version 2.5.0
 - **Auto Streaming Mode:** StreamTweak monitors Sunshine/Apollo logs and automatically adjusts network speed when Moonlight connects
 - **Redesigned Settings UI:** Professional modern layout with Windows 11-style toggle switch
-- **Intelligent Alert System:** 4-second awareness delay before network changes, auto-dismissal after 8 seconds
+- **Intelligent Alert System:** 8-second awareness delay before network changes, auto-dismissal after 8 seconds
 - **Better State Management:** Seamless coordination between Auto Mode and Manual Mode
 
 ## 📖 The Technical Story Behind This Project
@@ -71,7 +71,7 @@ StreamTweak.exe  ──(Named Pipe)──►  StreamTweakService  ──►  Net
 1. Enable "Auto Streaming Mode" in the Settings
 2. StreamTweak monitors your Sunshine/Apollo streaming server logs in real-time
 3. When Moonlight connects from a client:
-   - An on-screen alert appears (4-second delay for awareness)
+   - An on-screen alert appears (8-second delay for awareness)
    - Network speed automatically adjusts from current speed (e.g., 2.5Gbps) down to 1Gbps
 4. **Important:** Your stream will briefly disconnect during the speed adjustment
    - You have **30 seconds to reconnect** in Moonlight
