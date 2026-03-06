@@ -1,11 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using Microsoft.Win32;
 
 namespace StreamTweak
 {
-    /// <summary>
-    /// Parses Sunshine/Apollo log files to detect streaming events
-    /// </summary>
     public class LogParser
     {
         public enum StreamingEvent
@@ -15,9 +15,12 @@ namespace StreamTweak
             StreamStopped
         }
 
-        /// <summary>
-        /// Detects streaming events from a log line
-        /// </summary>
+        // Known app names to look for in the registry and Program Files
+        private static readonly string[] KnownAppNames =
+        {
+            "Vibepollo", "Vibeshine", "Apollo", "Sunshine"
+        };
+
         public static StreamingEvent ParseLogLine(string logLine)
         {
             if (string.IsNullOrWhiteSpace(logLine))
@@ -49,45 +52,215 @@ namespace StreamTweak
             return StreamingEvent.None;
         }
 
-        /// <summary>
-        /// Tries to find the log file for Sunshine or Apollo
-        /// </summary>
         public static string? FindStreamingServiceLogFile()
         {
-            string? apolloLog = FindApolloLog();
-            if (!string.IsNullOrEmpty(apolloLog) && File.Exists(apolloLog))
-                return apolloLog;
+            // Step 1: try registry — fast and precise
+            string? log = FindLogViaRegistry();
+            if (log != null) return log;
 
-            string? sunshineLog = FindSunshineLog();
-            if (!string.IsNullOrEmpty(sunshineLog) && File.Exists(sunshineLog))
-                return sunshineLog;
+            // Step 2: fallback — scan Program Files for known config structures
+            log = FindLogViaProgramFilesScan();
+            if (log != null) return log;
 
+            DebugLog("No streaming service log file found");
             return null;
         }
 
-        private static string? FindApolloLog()
+        #region Registry discovery
+
+        private static string? FindLogViaRegistry()
+        {
+            foreach (string appName in KnownAppNames)
+            {
+                string? installDir = GetInstallDirFromRegistry(appName);
+                if (string.IsNullOrEmpty(installDir)) continue;
+
+                string? log = FindLogInInstallDir(installDir, appName);
+                if (log != null) return log;
+            }
+            return null;
+        }
+
+        private static string? GetInstallDirFromRegistry(string appName)
+        {
+            // Try direct software key first
+            string? dir = ReadRegistryInstallDir($@"SOFTWARE\{appName}")
+                       ?? ReadRegistryInstallDir($@"SOFTWARE\WOW6432Node\{appName}");
+
+            if (!string.IsNullOrEmpty(dir)) return dir;
+
+            // Try Uninstall entries
+            return FindInUninstallKeys(appName);
+        }
+
+        private static string? ReadRegistryInstallDir(string subKey)
         {
             try
             {
-                string programFiles = Environment.GetEnvironmentVariable("ProgramFiles") ?? @"C:\Program Files";
-                string apolloLogPath = Path.Combine(programFiles, "Apollo", "config", "sunshine.log");
-                if (File.Exists(apolloLogPath)) return apolloLogPath;
+                using var key = Registry.LocalMachine.OpenSubKey(subKey);
+                if (key == null) return null;
+
+                // Common value names used by installers
+                foreach (string valueName in new[] { "InstallLocation", "InstallDir", "Path" })
+                {
+                    string? val = key.GetValue(valueName) as string;
+                    if (!string.IsNullOrEmpty(val) && Directory.Exists(val))
+                    {
+                        DebugLog($"Registry: found {subKey} → {val}");
+                        return val;
+                    }
+                }
             }
             catch { }
             return null;
         }
 
-        private static string? FindSunshineLog()
+        private static string? FindInUninstallKeys(string appName)
+        {
+            string[] uninstallPaths =
+            {
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+            };
+
+            foreach (string uninstallPath in uninstallPaths)
+            {
+                try
+                {
+                    using var uninstallKey = Registry.LocalMachine.OpenSubKey(uninstallPath);
+                    if (uninstallKey == null) continue;
+
+                    foreach (string subKeyName in uninstallKey.GetSubKeyNames())
+                    {
+                        try
+                        {
+                            using var subKey = uninstallKey.OpenSubKey(subKeyName);
+                            if (subKey == null) continue;
+
+                            string? displayName = subKey.GetValue("DisplayName") as string;
+                            if (string.IsNullOrEmpty(displayName)) continue;
+
+                            if (!displayName.Contains(appName, StringComparison.OrdinalIgnoreCase)) continue;
+
+                            string? installDir = subKey.GetValue("InstallLocation") as string;
+                            if (!string.IsNullOrEmpty(installDir) && Directory.Exists(installDir))
+                            {
+                                DebugLog($"Uninstall registry: found {appName} → {installDir}");
+                                return installDir;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+            }
+            return null;
+        }
+
+        #endregion
+
+        #region Program Files scan fallback
+
+        private static string? FindLogViaProgramFilesScan()
+        {
+            DebugLog("Registry lookup failed — scanning Program Files...");
+
+            // Collect all candidate Program Files directories
+            var searchRoots = new List<string>();
+
+            string pf = Environment.GetEnvironmentVariable("ProgramFiles") ?? @"C:\Program Files";
+            string pfx86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)") ?? @"C:\Program Files (x86)";
+
+            if (Directory.Exists(pf)) searchRoots.Add(pf);
+            if (Directory.Exists(pfx86) && pfx86 != pf) searchRoots.Add(pfx86);
+
+            // Search in known-name folders first (faster), then any folder
+            foreach (string root in searchRoots)
+            {
+                // Priority scan: known app names first
+                foreach (string appName in KnownAppNames)
+                {
+                    string candidate = Path.Combine(root, appName);
+                    if (!Directory.Exists(candidate)) continue;
+
+                    string? log = FindLogInInstallDir(candidate, appName);
+                    if (log != null) return log;
+                }
+
+                // Broad scan: any subfolder with a sunshine config structure
+                try
+                {
+                    foreach (string dir in Directory.GetDirectories(root))
+                    {
+                        // Skip already-checked known names
+                        string dirName = Path.GetFileName(dir);
+                        if (KnownAppNames.Any(n => n.Equals(dirName, StringComparison.OrdinalIgnoreCase)))
+                            continue;
+
+                        string? log = FindLogInInstallDir(dir, dirName);
+                        if (log != null) return log;
+                    }
+                }
+                catch { }
+            }
+
+            return null;
+        }
+
+        #endregion
+
+        #region Log file resolution
+
+        private static string? FindLogInInstallDir(string installDir, string appName)
         {
             try
             {
-                string programFiles = Environment.GetEnvironmentVariable("ProgramFiles") ?? @"C:\Program Files";
-                string sunshineLogPath = Path.Combine(programFiles, "Sunshine", "config", "sunshine.log");
-                if (File.Exists(sunshineLogPath)) return sunshineLogPath;
+                string configDir = Path.Combine(installDir, "config");
+                if (!Directory.Exists(configDir)) return null;
+
+                // Dynamic logs subfolder (Vibeshine/Vibepollo style)
+                string logsDir = Path.Combine(configDir, "logs");
+                if (Directory.Exists(logsDir))
+                {
+                    string? dynamic = FindMostRecentLogFile(logsDir);
+                    if (dynamic != null) return dynamic;
+                }
+
+                // Static log file (Sunshine/Apollo style)
+                string staticLog = Path.Combine(configDir, "sunshine.log");
+                if (File.Exists(staticLog))
+                {
+                    DebugLog($"Found static log for {appName}: {staticLog}");
+                    return staticLog;
+                }
             }
             catch { }
             return null;
         }
+
+        private static string? FindMostRecentLogFile(string logDirectory, string searchPattern = "sunshine-*.log")
+        {
+            if (!Directory.Exists(logDirectory)) return null;
+            try
+            {
+                var latest = Directory.GetFiles(logDirectory, searchPattern)
+                    .OrderByDescending(f => File.GetLastWriteTime(f))
+                    .FirstOrDefault();
+
+                if (!string.IsNullOrEmpty(latest))
+                {
+                    DebugLog($"Found dynamic log file: {Path.GetFileName(latest)} in {logDirectory}");
+                    return latest;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLog($"Error scanning directory {logDirectory}: {ex.Message}");
+            }
+            return null;
+        }
+
+        #endregion
 
         private static void DebugLog(string message)
         {

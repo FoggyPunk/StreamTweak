@@ -1,7 +1,7 @@
 <Window x:Class="StreamTweak.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="StreamTweak Settings" Height="460" Width="420"
+        Title="StreamTweak 2.5.2 Settings" Height="460" Width="420"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
         Background="{DynamicResource WindowBackground}"
         Foreground="{DynamicResource TextForeground}"
@@ -173,18 +173,18 @@
 
     <Grid Margin="20">
         <Grid.RowDefinitions>
-         <RowDefinition Height="Auto"/>
-         <RowDefinition Height="Auto"/>
-         <RowDefinition Height="Auto"/>
-         <RowDefinition Height="Auto"/>
-         <RowDefinition Height="Auto"/>
-         <RowDefinition Height="Auto"/>
-         <RowDefinition Height="Auto"/>
-         <RowDefinition Height="Auto"/>
-         <RowDefinition Height="Auto"/>
-         <RowDefinition Height="*"/>
-         <RowDefinition Height="Auto"/>
-         </Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
         <!-- Header -->
         <Grid Grid.Row="0" Margin="0,0,0,15">
@@ -195,19 +195,19 @@
         </Grid>
 
         <!-- Adapter -->
-        <TextBlock Text="Select Physical Network Adapter" FontWeight="Medium" Margin="0,0,0,5" Grid.Row="1"/>
+        <TextBlock Text="Select Physical Network Adapter:" FontWeight="Medium" Margin="0,0,0,5" Grid.Row="1"/>
         <ComboBox x:Name="AdapterComboBox" Margin="0,0,0,10" Grid.Row="2"
                   SelectionChanged="AdapterComboBox_SelectionChanged"/>
 
         <!-- Current Speed -->
         <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,10">
-            <TextBlock Text="Current Speed" FontWeight="Medium" Margin="0,0,10,0"/>
+            <TextBlock Text="Current Speed:" FontWeight="Medium" Margin="0,0,10,0"/>
             <TextBlock x:Name="CurrentSpeedTextBlock" Text="Detecting..." FontWeight="Bold"
                        Foreground="{DynamicResource AccentColor}"/>
         </StackPanel>
 
         <!-- Target Speed -->
-        <TextBlock Text="Target Link Speed" FontWeight="Medium" Margin="0,0,0,5" Grid.Row="4"/>
+        <TextBlock Text="Target Link Speed:" FontWeight="Medium" Margin="0,0,0,5" Grid.Row="4"/>
         <ComboBox x:Name="SpeedComboBox" Margin="0,0,0,10" Grid.Row="5"/>
 
         <!-- Separator -->
@@ -220,20 +220,20 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="Auto Streaming Mode" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
-            <CheckBox Grid.Column="1" x:Name="AutoStreamingToggle" Style="{StaticResource ToggleSwitchStyle}" 
-                      Margin="0,0,0,0" VerticalAlignment="Center" Checked="AutoStreamingToggle_Changed" 
+            <CheckBox Grid.Column="1" x:Name="AutoStreamingToggle" Style="{StaticResource ToggleSwitchStyle}"
+                      Margin="0,0,0,0" VerticalAlignment="Center" Checked="AutoStreamingToggle_Changed"
                       Unchecked="AutoStreamingToggle_Changed"/>
         </Grid>
 
         <StackPanel Grid.Row="8" Orientation="Vertical" Margin="0,12,0,0">
             <TextBlock FontSize="9" Foreground="#FF808080" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,2" LineHeight="14">
-                <Run Text="Auto-sets network speed to 1Gbps when Moonlight streams"/>
+                <Run Text="Auto-sets network speed to 1Gbps when Moonlight streams."/>
             </TextBlock>
             <TextBlock FontSize="9" Foreground="#FF808080" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,2" LineHeight="14">
-                <Run Text="⚠️ Disconnect may occur if speed adjustment is needed - Reconnect manually if required"/>
+                <Run Text="⚠️ A brief disconnect will occur during speed adjustment."/>
             </TextBlock>
             <TextBlock FontSize="9" Foreground="#FF808080" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,0" LineHeight="14">
-                <Run Text="Requires Sunshine/Apollo in default installation folders"/>
+                <Run Text="Reconnect within 30 seconds or the original speed will be restored."/>
             </TextBlock>
         </StackPanel>
 
@@ -244,14 +244,10 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <Button Grid.Column="0" x:Name="StreamingModeButton" Width="170" Height="32"
-                    Click="StreamingModeButton_Click" Style="{StaticResource ModernButton}"
-                    HorizontalAlignment="Left">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="Start Streaming Mode" VerticalAlignment="Center"/>
-                </StackPanel>
-            </Button>
-            <Image Grid.Column="1" Source="pack://application:,,,/Resources/streamtweak.ico" Width="24" Height="24" 
+            <Button Grid.Column="0" x:Name="StreamingModeButton" Content="Start Streaming Mode"
+                    Width="170" Height="32" Click="StreamingModeButton_Click"
+                    Style="{StaticResource ModernButton}" HorizontalAlignment="Left"/>
+            <Image Grid.Column="1" Source="pack://application:,,,/Resources/streamtweak.ico" Width="24" Height="24"
                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
             <Button Grid.Column="2" Content="Apply Settings" Width="110" Height="32" Click="ApplyButton_Click"
                     Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right"/>
@@ -259,7 +255,7 @@
 
         <!-- Info Text -->
         <StackPanel Grid.Row="10" Orientation="Vertical" HorizontalAlignment="Center" Margin="0,6,0,0" VerticalAlignment="Center">
-            <TextBlock Text="Streaming Mode auto-sets the Target Link Speed to 1Gbps. Stop to revert to original Speed" 
+            <TextBlock Text="Streaming Mode auto-sets the Target Link Speed to 1Gbps. Stop to revert to original Speed."
                        FontSize="9" Foreground="#FF808080" TextAlignment="Center" Margin="0,0,0,0"/>
         </StackPanel>
     </Grid>

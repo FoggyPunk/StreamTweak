@@ -11,11 +11,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<!-- DisplayHelper.cs removed — HDR and display monitoring no longer used -->
-		<Compile Remove="DisplayHelper.cs" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<None Remove="Resources\streammodeko.ico" />
 		<None Remove="Resources\streammodeok.ico" />
 		<None Remove="Resources\streamtweak.ico" />

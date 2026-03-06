@@ -1,20 +1,24 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace StreamTweak
 {
-    /// <summary>
-    /// Monitors Sunshine/Apollo log files for streaming events
-    /// </summary>
     public class StreamingLogMonitor : IDisposable
     {
         private StreamReader? logStreamReader;
         private string? currentLogFilePath;
+        private string? monitoredDirectory;
         private Task? monitoringTask;
         private CancellationTokenSource? cancellationTokenSource;
         private bool isDisposed = false;
+
+        // How often to re-run the full discovery to catch dynamic logs
+        // that appear after startup (e.g. Vibepollo creating logs\ after StreamTweak starts)
+        private const int REDISCOVERY_INTERVAL_MS = 10000;
+        private DateTime lastRediscoveryTime = DateTime.MinValue;
 
         public event EventHandler<StreamingEventArgs>? StreamingEventDetected;
 
@@ -23,22 +27,23 @@ namespace StreamTweak
             public LogParser.StreamingEvent Event { get; set; }
         }
 
-        /// <summary>
-        /// Starts monitoring the Sunshine/Apollo log file
-        /// </summary>
         public void StartMonitoring()
         {
             if (isDisposed)
                 throw new ObjectDisposedException(nameof(StreamingLogMonitor));
 
             currentLogFilePath = LogParser.FindStreamingServiceLogFile();
+
             if (string.IsNullOrEmpty(currentLogFilePath))
             {
-                DebugLog("ERROR: Sunshine/Apollo log file not found!");
-                return;
+                DebugLog("No log file found at startup — will keep retrying via rediscovery");
             }
-
-            DebugLog($"Starting log monitoring: {currentLogFilePath}");
+            else
+            {
+                monitoredDirectory = Path.GetDirectoryName(currentLogFilePath);
+                DebugLog($"Starting log monitoring in directory: {monitoredDirectory}");
+                DebugLog($"Initial log file: {Path.GetFileName(currentLogFilePath)}");
+            }
 
             try
             {
@@ -51,9 +56,6 @@ namespace StreamTweak
             }
         }
 
-        /// <summary>
-        /// Stops monitoring the log file
-        /// </summary>
         public void StopMonitoring()
         {
             try
@@ -65,22 +67,24 @@ namespace StreamTweak
             catch { }
         }
 
-        /// <summary>
-        /// Asynchronously monitors the log file for new content
-        /// </summary>
         private async Task MonitorLogFileAsync(CancellationToken cancellationToken)
         {
-            if (string.IsNullOrEmpty(currentLogFilePath) || !File.Exists(currentLogFilePath))
-                return;
-
             try
             {
-                using var fileStream = new FileStream(currentLogFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                fileStream.Seek(0, SeekOrigin.End);
-                logStreamReader = new StreamReader(fileStream);
+                if (!string.IsNullOrEmpty(currentLogFilePath) && File.Exists(currentLogFilePath))
+                    OpenStreamReader();
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
+                    // Periodic full rediscovery — catches dynamic logs that appear after startup
+                    await CheckForRediscoveryAsync(cancellationToken);
+
+                    if (logStreamReader == null)
+                    {
+                        await Task.Delay(500, cancellationToken);
+                        continue;
+                    }
+
                     string? line = await logStreamReader.ReadLineAsync();
 
                     if (line != null)
@@ -95,15 +99,122 @@ namespace StreamTweak
                     }
                     else
                     {
-                        await Task.Delay(500, cancellationToken);
+                        // No new lines — check for rotation within current directory, then wait
+                        CheckForLogRotation();
+                        await Task.Delay(100, cancellationToken);
                     }
                 }
             }
             catch (OperationCanceledException)
             {
-                // Expected when stopping
+                DebugLog("Monitoring cancelled");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                DebugLog($"ERROR in monitoring loop: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Every REDISCOVERY_INTERVAL_MS, re-runs the full FindStreamingServiceLogFile() discovery.
+        /// This handles the case where a dynamic log file (e.g. Vibepollo logs\sunshine-*.log)
+        /// appears after StreamTweak has already started monitoring a static fallback file.
+        /// If a better or different log is found, switches to it.
+        /// </summary>
+        private async Task CheckForRediscoveryAsync(CancellationToken cancellationToken)
+        {
+            if ((DateTime.Now - lastRediscoveryTime).TotalMilliseconds < REDISCOVERY_INTERVAL_MS)
+                return;
+
+            lastRediscoveryTime = DateTime.Now;
+
+            try
+            {
+                string? discovered = LogParser.FindStreamingServiceLogFile();
+
+                if (string.IsNullOrEmpty(discovered)) return;
+
+                // Switch if: no file monitored yet, or a different (better) file found
+                if (string.IsNullOrEmpty(currentLogFilePath) ||
+                    !string.Equals(discovered, currentLogFilePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    DebugLog($"Rediscovery: switching from '{Path.GetFileName(currentLogFilePath ?? "none")}' to '{Path.GetFileName(discovered)}'");
+                    currentLogFilePath = discovered;
+                    monitoredDirectory = Path.GetDirectoryName(discovered);
+                    OpenStreamReader(discovered);
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLog($"Error during rediscovery: {ex.Message}");
+            }
+
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Checks if a newer dynamic log file has appeared in the same directory (log rotation).
+        /// Only relevant for directories that contain sunshine-*.log files.
+        /// </summary>
+        private void CheckForLogRotation()
+        {
+            if (string.IsNullOrEmpty(monitoredDirectory)) return;
+
+            try
+            {
+                string? latestLog = FindMostRecentLogFileInDir(monitoredDirectory);
+
+                if (latestLog != null &&
+                    !string.Equals(latestLog, currentLogFilePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    DebugLog($"Log rotation: switching from '{Path.GetFileName(currentLogFilePath)}' to '{Path.GetFileName(latestLog)}'");
+                    currentLogFilePath = latestLog;
+                    OpenStreamReader(latestLog);
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLog($"Error during rotation check: {ex.Message}");
+            }
+        }
+
+        private string? FindMostRecentLogFileInDir(string directory)
+        {
+            if (!Directory.Exists(directory)) return null;
+            try
+            {
+                return Directory.GetFiles(directory, "sunshine-*.log")
+                    .OrderByDescending(f => File.GetLastWriteTime(f))
+                    .FirstOrDefault();
+            }
+            catch { return null; }
+        }
+
+        // FileStream intentionally NOT in a using block — it must outlive the StreamReader
+        private void OpenStreamReader(string? filePath = null)
+        {
+            try { logStreamReader?.Dispose(); } catch { }
+            logStreamReader = null;
+
+            string targetPath = filePath ?? currentLogFilePath ?? string.Empty;
+            if (string.IsNullOrEmpty(targetPath) || !File.Exists(targetPath)) return;
+
+            try
+            {
+                var fileStream = new FileStream(
+                    targetPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite);
+
+                fileStream.Seek(0, SeekOrigin.End);
+                logStreamReader = new StreamReader(fileStream);
+                DebugLog($"StreamReader opened on: {Path.GetFileName(targetPath)}");
+            }
+            catch (Exception ex)
+            {
+                DebugLog($"ERROR opening stream reader: {ex.Message}");
+            }
         }
 
         public void Dispose()

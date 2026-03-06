@@ -4,6 +4,28 @@ StreamTweak - ChangeLog - Developed by FoggyPunk
 
 https://github.com/FoggyPunk/StreamTweak
 
+Version 2.5.2 - The "Vibe Update" (06/03/2026)
+------------------------------------------
+✨ NEW FEATURES:
+• Vibepollo and Vibeshine support: Auto Streaming Mode now works with
+  all major Sunshine forks
+• Dynamic log discovery: streaming server location is auto-detected via
+  registry lookup, with Program Files scan as fallback — custom
+  installation paths fully supported
+• Log rotation support: automatically follows dynamic log files
+  (sunshine-YYYYMMDD-HHMMSS-mmm.log) used by Vibepollo and Vibeshine
+
+🔧 IMPROVEMENTS:
+• StreamingLogMonitor re-runs full log discovery every 10 seconds,
+  catching dynamic log files that appear after startup
+• Updated UI warning: disconnect during speed adjustment is now stated
+  clearly, with 30-second reconnect window explained
+
+🐛 STABILITY & FIXES:
+• Fixed monitor not switching to dynamic log files when they appear
+  after StreamTweak has already started
+• Fixed FileStream disposed too early in StreamingLogMonitor
+
 Version 2.5.1 - The "Silent Power Update" (04/03/2026)
 ------------------------------------------
 ✨ NEW FEATURES:
