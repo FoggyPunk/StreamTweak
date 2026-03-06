@@ -223,20 +223,33 @@
 
             <!-- Tab selector buttons -->
             <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
-                <Button x:Name="SettingsTabButton"
+                <Button x:Name="NetworkTabButton"
                         Style="{StaticResource TabButtonActive}"
                         Margin="0,0,10,0"
-                        Click="SettingsTabButton_Click">
+                        Click="NetworkTabButton_Click">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets"
+                        <TextBlock Text="&#xE839;" FontFamily="Segoe MDL2 Assets"
                                    FontSize="14" FontWeight="Normal"
                                    Margin="0,0,6,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="Settings" VerticalAlignment="Center"
+                        <TextBlock Text="Network" VerticalAlignment="Center"
+                                   FontSize="13" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="AudioTabButton"
+                        Style="{StaticResource TabButton}"
+                        Margin="0,0,10,0"
+                        Click="AudioTabButton_Click">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xE7F6;" FontFamily="Segoe MDL2 Assets"
+                                   FontSize="14" FontWeight="Normal"
+                                   Margin="0,0,6,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Audio" VerticalAlignment="Center"
                                    FontSize="13" FontWeight="SemiBold"/>
                     </StackPanel>
                 </Button>
                 <Button x:Name="LogsTabButton"
                         Style="{StaticResource TabButton}"
+                        Margin="0,0,10,0"
                         Click="LogsTabButton_Click">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="&#xE823;" FontFamily="Segoe MDL2 Assets"
@@ -248,7 +261,6 @@
                 </Button>
                 <Button x:Name="AboutTabButton"
                         Style="{StaticResource TabButton}"
-                        Margin="10,0,0,0"
                         Click="AboutTabButton_Click">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="&#xE946;" FontFamily="Segoe MDL2 Assets"
@@ -258,13 +270,13 @@
                                    FontSize="13" FontWeight="SemiBold"/>
                     </StackPanel>
                 </Button>
-                <Button x:Name="ThemeToggleButton" Content="🌙 Dark Mode" Margin="30,0,0,0"
-                        Style="{StaticResource ModernButton}" Width="110" Height="28" Padding="5,2"
+                <Button x:Name="ThemeToggleButton" Content="🌙" Margin="30,0,0,0"
+                        Style="{StaticResource ModernButton}" Width="36" Height="28" Padding="2,2"
                         VerticalAlignment="Center" Click="ThemeToggleButton_Click"/>
             </StackPanel>
 
-            <!-- ═══════════════ SETTINGS PANEL ═══════════════ -->
-            <Border x:Name="SettingsPanel" Grid.Row="1"
+            <!-- ═══════════════ NETWORK PANEL ═══════════════ -->
+            <Border x:Name="NetworkPanel" Grid.Row="1"
                     Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="10" Padding="14,12,14,14" TextElement.Foreground="{DynamicResource TextForeground}">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -352,6 +364,88 @@
                 </Grid>
             </Border>
 
+            <!-- ═══════════════ AUDIO PANEL ═══════════════ -->
+            <Border x:Name="AudioPanel" Grid.Row="1" Visibility="Collapsed"
+                    Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderColor}"
+                    BorderThickness="1" CornerRadius="10" Padding="14,12,14,14"
+                    TextElement.Foreground="{DynamicResource TextForeground}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>     <!-- 0: top spacer -->
+                        <RowDefinition Height="Auto"/>  <!-- 1: title -->
+                        <RowDefinition Height="Auto"/>  <!-- 2: Dolby Access status -->
+                        <RowDefinition Height="Auto"/>  <!-- 3: separator -->
+                        <RowDefinition Height="Auto"/>  <!-- 4: toggle -->
+                        <RowDefinition Height="Auto"/>  <!-- 5: description -->
+                        <RowDefinition Height="16"/>    <!-- 6: spacer -->
+                        <RowDefinition Height="Auto"/>  <!-- 7: monitor status -->
+                        <RowDefinition Height="*"/>     <!-- 8: bottom spacer -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Title -->
+                    <StackPanel Grid.Row="1" HorizontalAlignment="Center" Margin="0,0,0,10">
+                        <TextBlock Text="&#xE7F6;" FontFamily="Segoe MDL2 Assets" FontSize="26"
+                                   HorizontalAlignment="Center" Margin="0,0,0,8"
+                                   Foreground="{DynamicResource AccentColor}"/>
+                        <TextBlock Text="Steam Streaming Speakers Monitor" FontSize="14" FontWeight="Bold"
+                                   HorizontalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Dolby Access detection status -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12">
+                        <TextBlock x:Name="DolbyAccessIcon" Text="●" FontSize="9"
+                                   VerticalAlignment="Center" Margin="0,0,5,0"
+                                   Foreground="Gray"/>
+                        <TextBlock x:Name="DolbyAccessText" FontSize="11" VerticalAlignment="Center"
+                                   Text="Checking Dolby Access…"
+                                   Foreground="{DynamicResource TextForeground}" Opacity="0.7"/>
+                    </StackPanel>
+
+                    <!-- Separator -->
+                    <Separator Grid.Row="3" Background="{DynamicResource BorderColor}" Margin="0,0,0,16"/>
+
+                    <!-- Toggle -->
+                    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center"
+                                VerticalAlignment="Center" Margin="0,0,0,14">
+                        <TextBlock Text="Auto Dolby Atmos for Headphones" FontWeight="SemiBold" FontSize="13"
+                                   VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <CheckBox x:Name="DolbyMonitorToggle" Style="{StaticResource ToggleSwitchStyle}"
+                                  VerticalAlignment="Center" Checked="DolbyMonitorToggle_Changed"
+                                  Unchecked="DolbyMonitorToggle_Changed"/>
+                    </StackPanel>
+
+                    <!-- Description -->
+                    <StackPanel Grid.Row="5" Orientation="Vertical">
+                        <TextBlock FontSize="11" Foreground="{DynamicResource TextForeground}" Opacity="0.7"
+                                   TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,3" LineHeight="16">
+                            <Run Text="When a streaming session is detected and stays active for 30 seconds,"/>
+                        </TextBlock>
+                        <TextBlock FontSize="11" Foreground="{DynamicResource TextForeground}" Opacity="0.7"
+                                   TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,3" LineHeight="16">
+                            <Run Text="Dolby Atmos for Headphones is enabled on Steam Streaming Speakers"/>
+                        </TextBlock>
+                        <TextBlock FontSize="11" Foreground="{DynamicResource TextForeground}" Opacity="0.7"
+                                   TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,0" LineHeight="16">
+                            <Run Text="if Dolby Access is installed and the format is available."/>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <!-- Monitor status box -->
+                    <Border Grid.Row="7" Padding="10,8"
+                            Background="{DynamicResource WindowBackground}"
+                            BorderBrush="{DynamicResource BorderColor}"
+                            BorderThickness="1" CornerRadius="6">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="Status:" FontSize="11" FontWeight="SemiBold"
+                                       VerticalAlignment="Center" Margin="0,0,6,0"
+                                       Foreground="{DynamicResource TextForeground}"/>
+                            <TextBlock x:Name="DolbyStatusText" FontSize="11" VerticalAlignment="Center"
+                                       Text="Disabled" Foreground="{DynamicResource TextForeground}" Opacity="0.7"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+
             <!-- ═══════════════ LOGS PANEL ═══════════════ -->
             <Border x:Name="LogsPanel" Grid.Row="1" Visibility="Collapsed"
                     Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="10" Padding="14,12,14,14" TextElement.Foreground="{DynamicResource TextForeground}">
@@ -359,6 +453,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
@@ -408,8 +503,14 @@
                                Foreground="{DynamicResource TextForeground}" Opacity="0.7" HorizontalAlignment="Center"
                                VerticalAlignment="Center" Visibility="Collapsed"/>
 
+                    <!-- Stream host label -->
+                    <TextBlock Grid.Row="2" Text="Stream host log folder"
+                               FontSize="9" FontWeight="SemiBold" Opacity="0.45"
+                               HorizontalAlignment="Center" Margin="0,10,0,4"
+                               Foreground="{DynamicResource TextForeground}"/>
+
                     <!-- Detected streaming software -->
-                    <Border Grid.Row="2" Margin="0,10,0,0" Padding="8,7"
+                    <Border Grid.Row="3" Padding="8,7"
                             Background="{DynamicResource WindowBackground}"
                             BorderBrush="{DynamicResource BorderColor}"
                             BorderThickness="1" CornerRadius="6">
@@ -442,7 +543,7 @@
                     </Border>
 
                     <!-- Footer -->
-                    <TextBlock Grid.Row="3" FontSize="9" Foreground="{DynamicResource TextForeground}" Opacity="0.7"
+                    <TextBlock Grid.Row="4" FontSize="9" Foreground="{DynamicResource TextForeground}" Opacity="0.7"
                                TextAlignment="Center" Margin="0,8,0,0">
                         <Run Text="Last 10 sessions — Auto and Manual streaming sessions are tracked automatically."/>
                     </TextBlock>
@@ -476,8 +577,24 @@
                                HorizontalAlignment="Center" Margin="0,0,0,2"
                                Foreground="{DynamicResource TextForeground}"/>
                     <TextBlock x:Name="AboutBuildDateText" FontSize="11" Opacity="0.55"
-                               HorizontalAlignment="Center" Margin="0,0,0,20"
+                               HorizontalAlignment="Center" Margin="0,0,0,0"
                                Foreground="{DynamicResource TextForeground}"/>
+
+                    <!-- Update check -->
+                    <StackPanel HorizontalAlignment="Center" Margin="0,0,0,20">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
+                            <TextBlock x:Name="UpdateStatusText" FontSize="11" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextForeground}" Opacity="0.7"
+                                       Margin="0,0,8,0"/>
+                            <Button x:Name="CheckUpdateButton" Content="Check for updates" Height="26"
+                                    Style="{StaticResource ModernButton}" FontSize="11" Width="140"
+                                    Click="CheckUpdateButton_Click"/>
+                        </StackPanel>
+                        <TextBlock x:Name="UpdateLinkText" Text="⬇ Download latest version" FontSize="11"
+                                   HorizontalAlignment="Center" Margin="0,5,0,0" Cursor="Hand"
+                                   Foreground="{DynamicResource AccentColor}" Visibility="Collapsed"
+                                   MouseLeftButtonUp="UpdateLinkText_Click"/>
+                    </StackPanel>
 
                     <!-- Separator -->
                     <Separator Background="{DynamicResource BorderColor}" Margin="0,0,0,16" Width="260"/>
@@ -494,51 +611,52 @@
                         </Border>
                     </StackPanel>
 
-                    <!-- GitHub button -->
-                    <Button Width="240" Height="42" HorizontalAlignment="Center"
-                            Margin="0,0,0,10" Click="GitHubButton_Click">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource ModernButton}">
-                                <Setter Property="Background" Value="#24292e"/>
-                                <Setter Property="Foreground" Value="White"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#3a4148"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="&#xE8F7;" FontFamily="Segoe MDL2 Assets"
-                                       FontSize="15" FontWeight="Normal"
-                                       Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="View on GitHub" VerticalAlignment="Center"
-                                       FontSize="13" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Button>
+                    <!-- GitHub + Donate buttons (side by side) -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
 
-                    <!-- PayPal Donate Button -->
-                    <Button Width="240" Height="42"
-                            HorizontalAlignment="Center" Click="DonateButton_Click">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource ModernButton}">
-                                <Setter Property="Background" Value="#0070BA"/>
-                                <Setter Property="Foreground" Value="White"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#005EA6"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="💳" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock Text="Donate via PayPal" VerticalAlignment="Center"
-                                       FontSize="13" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Button>
+                        <Button Width="152" Height="36" Margin="0,0,8,0" Click="GitHubButton_Click">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource ModernButton}">
+                                    <Setter Property="Background" Value="#24292e"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#3a4148"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="&#xE8F7;" FontFamily="Segoe MDL2 Assets"
+                                           FontSize="13" FontWeight="Normal"
+                                           Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="View on GitHub" VerticalAlignment="Center"
+                                           FontSize="12" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Width="152" Height="36" Click="DonateButton_Click">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource ModernButton}">
+                                    <Setter Property="Background" Value="#0070BA"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#005EA6"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="💳" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="Donate via PayPal" VerticalAlignment="Center"
+                                           FontSize="12" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Button>
+
+                    </StackPanel>
 
                 </StackPanel>
             </Border>

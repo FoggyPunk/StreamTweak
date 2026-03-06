@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -32,10 +33,14 @@ namespace StreamTweak
         public event EventHandler? SpeedApplied;
         public event EventHandler? StreamingModeChanged;
         public event EventHandler? AutoStreamingEnabledChanged;
+        public event EventHandler? AudioMonitorEnabledChanged;
 
-        private static readonly SolidColorBrush StreamingStartBrush   = new(Color.FromRgb(168, 213, 162));
-        private static readonly SolidColorBrush StreamingStopBrush    = new(Color.FromRgb(244, 168, 168));
+        private bool _isAudioMonitorEnabled = false;
+
+        private static readonly SolidColorBrush StreamingStartBrush    = new(Color.FromRgb(168, 213, 162));
+        private static readonly SolidColorBrush StreamingStopBrush     = new(Color.FromRgb(244, 168, 168));
         private static readonly SolidColorBrush StreamingDisabledBrush = new(Color.FromRgb(180, 180, 180));
+        private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(10) };
 
         public SettingsWindow()
         {
@@ -57,6 +62,7 @@ namespace StreamTweak
             LoadConfig();
             LoadNetworkAdapters();
             RefreshSessionHistory();
+            RefreshDolbyAccessStatusAsync();
         }
 
         // ─── Public sync methods called from App.xaml.cs ───────────────────
@@ -131,22 +137,39 @@ namespace StreamTweak
             SaveConfig(saveAdapter: false);
         }
 
-        private void SettingsTabButton_Click(object sender, RoutedEventArgs e)
+        private void NetworkTabButton_Click(object sender, RoutedEventArgs e)
         {
-            SettingsPanel.Visibility = Visibility.Visible;
+            NetworkPanel.Visibility  = Visibility.Visible;
+            AudioPanel.Visibility    = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Collapsed;
-            SettingsTabButton.Style  = (Style)this.Resources["TabButtonActive"];
+            NetworkTabButton.Style   = (Style)this.Resources["TabButtonActive"];
+            AudioTabButton.Style     = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
         }
 
+        private void AudioTabButton_Click(object sender, RoutedEventArgs e)
+        {
+            NetworkPanel.Visibility  = Visibility.Collapsed;
+            AudioPanel.Visibility    = Visibility.Visible;
+            LogsPanel.Visibility     = Visibility.Collapsed;
+            AboutPanel.Visibility    = Visibility.Collapsed;
+            NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
+            AudioTabButton.Style     = (Style)this.Resources["TabButtonActive"];
+            LogsTabButton.Style      = (Style)this.Resources["TabButton"];
+            AboutTabButton.Style     = (Style)this.Resources["TabButton"];
+            RefreshDolbyAccessStatusAsync();
+        }
+
         private void LogsTabButton_Click(object sender, RoutedEventArgs e)
         {
-            SettingsPanel.Visibility = Visibility.Collapsed;
+            NetworkPanel.Visibility  = Visibility.Collapsed;
+            AudioPanel.Visibility    = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Visible;
             AboutPanel.Visibility    = Visibility.Collapsed;
-            SettingsTabButton.Style  = (Style)this.Resources["TabButton"];
+            NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
+            AudioTabButton.Style     = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButtonActive"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
             RefreshStreamingAppInfo();
@@ -154,13 +177,16 @@ namespace StreamTweak
 
         private void AboutTabButton_Click(object sender, RoutedEventArgs e)
         {
-            SettingsPanel.Visibility = Visibility.Collapsed;
+            NetworkPanel.Visibility  = Visibility.Collapsed;
+            AudioPanel.Visibility    = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Visible;
-            SettingsTabButton.Style  = (Style)this.Resources["TabButton"];
+            NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
+            AudioTabButton.Style     = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButtonActive"];
             PopulateAboutInfo();
+            _ = CheckForUpdatesAsync();
         }
 
         private void ToggleTheme(bool setDark)
@@ -175,7 +201,7 @@ namespace StreamTweak
                 Application.Current.Resources["PanelBackground"]  = new SolidColorBrush(Color.FromRgb(45, 45, 45));
                 Application.Current.Resources["TextForeground"]   = new SolidColorBrush(Colors.White);
                 Application.Current.Resources["BorderColor"]      = new SolidColorBrush(Color.FromRgb(60, 60, 60));
-                ThemeToggleButton.Content = "☀️ Light Mode";
+                ThemeToggleButton.Content = "☀️";
             }
             else
             {
@@ -186,7 +212,7 @@ namespace StreamTweak
                 Application.Current.Resources["PanelBackground"]  = new SolidColorBrush(Colors.White);
                 Application.Current.Resources["TextForeground"]   = new SolidColorBrush(Color.FromRgb(32, 32, 32));
                 Application.Current.Resources["BorderColor"]      = new SolidColorBrush(Color.FromRgb(209, 209, 209));
-                ThemeToggleButton.Content = "🌙 Dark Mode";
+                ThemeToggleButton.Content = "🌙";
             }
             UpdateTitleBarTheme();
         }
@@ -262,6 +288,81 @@ namespace StreamTweak
             AboutBuildDateText.Text = File.Exists(location)
                 ? $"Build: {File.GetLastWriteTime(location):dd MMM yyyy}"
                 : string.Empty;
+
+            UpdateStatusText.Text = string.Empty;
+            UpdateStatusText.SetResourceReference(TextBlock.ForegroundProperty, "TextForeground");
+            UpdateStatusText.Opacity = 0.7;
+            UpdateLinkText.Visibility = Visibility.Collapsed;
+            CheckUpdateButton.IsEnabled = true;
+        }
+
+        private async Task CheckForUpdatesAsync()
+        {
+            UpdateStatusText.Text = "Checking for updates…";
+            CheckUpdateButton.IsEnabled = false;
+            UpdateLinkText.Visibility = Visibility.Collapsed;
+
+            try
+            {
+                _httpClient.DefaultRequestHeaders.UserAgent.TryParseAdd("StreamTweak-UpdateCheck");
+                string json = await _httpClient.GetStringAsync(
+                    "https://api.github.com/repos/FoggyPunk/StreamTweak/releases/latest");
+
+                using var doc = JsonDocument.Parse(json);
+                string? tagName = doc.RootElement.GetProperty("tag_name").GetString();
+                if (string.IsNullOrEmpty(tagName))
+                {
+                    UpdateStatusText.Text = "Could not check for updates.";
+                    return;
+                }
+
+                string latestStr = tagName.TrimStart('v');
+                var current = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+
+                if (current != null && Version.TryParse(latestStr, out var latest))
+                {
+                    var currentNorm = new Version(current.Major, current.Minor, current.Build);
+                    if (latest > currentNorm)
+                    {
+                        UpdateStatusText.Text = $"⬆ Update available: v{latestStr}";
+                        UpdateStatusText.Foreground = (SolidColorBrush)this.Resources["AccentColor"];
+                        UpdateStatusText.Opacity = 1.0;
+                        UpdateLinkText.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        UpdateStatusText.Text = "✓ You have the latest version";
+                        UpdateStatusText.Foreground = new SolidColorBrush(Color.FromRgb(76, 175, 80));
+                        UpdateStatusText.Opacity = 1.0;
+                    }
+                }
+                else
+                {
+                    UpdateStatusText.Text = "Could not check for updates.";
+                }
+            }
+            catch
+            {
+                UpdateStatusText.Text = "Could not check for updates.";
+            }
+            finally
+            {
+                CheckUpdateButton.IsEnabled = true;
+            }
+        }
+
+        private async void CheckUpdateButton_Click(object sender, RoutedEventArgs e)
+        {
+            await CheckForUpdatesAsync();
+        }
+
+        private void UpdateLinkText_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "https://github.com/FoggyPunk/StreamTweak/releases/latest",
+                UseShellExecute = true
+            });
         }
 
         private void DonateButton_Click(object sender, RoutedEventArgs e)
@@ -312,6 +413,9 @@ namespace StreamTweak
 
                 if (root.TryGetProperty("AutoStreamingEnabled", out var autoEl))
                     isAutoStreamingEnabled = autoEl.GetBoolean();
+
+                if (root.TryGetProperty("AudioMonitorEnabled", out var audioEl))
+                    _isAudioMonitorEnabled = audioEl.GetBoolean();
 
                 AutoStreamingToggle.IsChecked = isAutoStreamingEnabled;
             }
@@ -663,6 +767,66 @@ namespace StreamTweak
             isAutoStreamingEnabled = AutoStreamingToggle.IsChecked ?? true;
             SaveAutoStreamingStateToConfig();
             AutoStreamingEnabledChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void DolbyMonitorToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            _isAudioMonitorEnabled = DolbyMonitorToggle.IsChecked ?? false;
+            SaveAudioMonitorStateToConfig();
+            AudioMonitorEnabledChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void SaveAudioMonitorStateToConfig()
+        {
+            try
+            {
+                string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
+                var data = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
+                           ?? new Dictionary<string, object>();
+                data["AudioMonitorEnabled"] = _isAudioMonitorEnabled;
+                File.WriteAllText(configFilePath,
+                    JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { }
+        }
+
+        public void SyncAudioMonitorState(bool enabled)
+        {
+            _isAudioMonitorEnabled = enabled;
+            DolbyMonitorToggle.IsChecked = enabled;
+        }
+
+        public void SyncDolbyMonitorStatus(string status)
+        {
+            DolbyStatusText.Text = status;
+            if (status.StartsWith("✓"))
+            {
+                DolbyStatusText.Foreground = new SolidColorBrush(Color.FromRgb(76, 175, 80));
+                DolbyStatusText.Opacity = 1.0;
+            }
+            else
+            {
+                DolbyStatusText.SetResourceReference(TextBlock.ForegroundProperty, "TextForeground");
+                DolbyStatusText.Opacity = 0.7;
+            }
+        }
+
+        private async void RefreshDolbyAccessStatusAsync()
+        {
+            DolbyAccessIcon.Foreground = System.Windows.Media.Brushes.Gray;
+            DolbyAccessText.Text = "Checking Dolby Atmos for Headphones\u2026";
+
+            bool available = await DolbyAudioMonitor.IsDolbyAtmosAvailableAsync();
+            if (available)
+            {
+                DolbyAccessIcon.Foreground = new SolidColorBrush(Color.FromRgb(76, 175, 80));
+                DolbyAccessText.Text = "Dolby Atmos for Headphones: detected";
+            }
+            else
+            {
+                DolbyAccessIcon.Foreground = new SolidColorBrush(Color.FromRgb(220, 70, 50));
+                DolbyAccessText.Text = "Dolby Atmos for Headphones: not found";
+            }
         }
     }
 }

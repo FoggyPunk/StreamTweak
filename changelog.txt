@@ -4,6 +4,28 @@ StreamTweak - ChangeLog - Developed by FoggyPunk
 
 https://github.com/FoggyPunk/StreamTweak
 
+Version 3.1.0 - The "Atmos Update" (06/03/2026)
+------------------------------------------
+✨ NEW FEATURES:
+• Audio tab — Auto Dolby Atmos for Headphones: when a streaming session
+  is detected and stays active for at least 30 seconds, StreamTweak
+  automatically enables Dolby Atmos for Headphones on Steam Streaming
+  Speakers, provided Dolby Access is installed and the format is available
+• Audio tab — Dolby Access detection indicator: a live status indicator
+  shows whether Dolby Atmos for Headphones is detected on the host PC,
+  checked via the Windows Spatial Audio API at startup and each time the
+  Audio tab is opened
+• Audio tab — activation status: the Status box turns green when Dolby
+  Atmos for Headphones is successfully enabled
+• Tray right-click — Dolby Atmos toggle: enable or disable the Dolby
+  Atmos auto-activation directly from the system tray context menu,
+  in sync with the Audio tab toggle
+
+🔧 IMPROVEMENTS:
+• About tab — version check: the current version of StreamTweak is now
+  compared against the latest GitHub release; if a newer version is
+  available, a download link is shown automatically
+
 Version 3.0.0 - The "Awareness Update" (06/03/2026)
 ------------------------------------------
 ✨ NEW FEATURES:

@@ -10,7 +10,16 @@ StreamTweak works seamlessly with [Moonlight](https://github.com/moonlight-strea
 
 > ⚠️ **Browser Warning:** When downloading the installer, Edge or Chrome may show a security warning. This is a **false positive** caused by the lack of a paid code-signing certificate — common for open-source projects. Click **"Keep"** or **"Keep anyway"** to proceed. The source code is fully available here for inspection.
 
-## ✨ What's New in Version 3.0.0 — The "Awareness Update"
+## ✨ What's New in Version 3.1.0 — The "Atmos Update"
+
+- **Auto Dolby Atmos for Headphones:** StreamTweak now automatically enables Dolby Atmos for Headphones on Steam Streaming Speakers once a streaming session has been active for 30 continuous seconds — requires [Dolby Access](https://apps.microsoft.com/detail/9n0866fs04w8) installed on the host PC
+- **Dolby Access detection:** the Audio tab displays a live status indicator that confirms whether Dolby Atmos for Headphones is available on the system, checked via the Windows Spatial Audio API at startup and each time the Audio tab is opened
+- **Audio activation status:** the Status box in the Audio tab turns green when Dolby Atmos for Headphones is successfully enabled on Steam Streaming Speakers
+- **Tray Dolby Atmos toggle:** enable or disable Dolby auto-activation directly from the system tray right-click menu, in sync with the Audio tab toggle
+- **Version check:** StreamTweak now compares its current version against the latest GitHub release and shows a direct download link in the About tab when an update is available
+
+<details>
+<summary>Previous highlights — Version 3.0.0 — The "Awareness Update"</summary>
 
 - **Logs tab:** browse the last 10 speed-change sessions at a glance — trigger mode (Auto/Manual), duration, and original speed are all recorded automatically
 - **Streaming app detection:** the Logs tab shows whether StreamTweak has correctly located the log folder of your streaming server (Sunshine, Apollo, Vibeshine or Vibepollo); click the path to open the folder directly in Explorer
@@ -19,6 +28,8 @@ StreamTweak works seamlessly with [Moonlight](https://github.com/moonlight-strea
 - **Tray speed readout:** the current link speed of the selected adapter is always visible in the tray context menu
 - **Tray streaming status:** the context menu now shows whether a streaming session is currently active or inactive
 - **Full UI revision:** centered layout across all panels, redesigned tab bar with Dark/Light Mode button integrated, improved spacing and visual balance throughout
+
+</details>
 
 ## 📖 The Technical Story Behind This Project
 This project was born out of a specific frustration in the cloud gaming community. When using game streaming software like **[Moonlight](https://github.com/moonlight-stream/moonlight-qt)** with **Sunshine** or **Apollo**, a known issue occurs if the host PC and the client have mismatched Ethernet link speeds.
@@ -31,6 +42,8 @@ StreamTweak makes the workaround (throttling the Host PC's Ethernet adapter down
 
 ## 🔥 Key Features
 - **Settings Dashboard:** Sleek UI to manage physical adapters and speeds.
+- **Auto Dolby Atmos for Headphones:** automatically enables Dolby Atmos for Headphones on Steam Streaming Speakers 30 seconds after a streaming session starts — requires [Dolby Access](https://apps.microsoft.com/detail/9n0866fs04w8) on the host PC.
+- **Dolby Access detection:** the Audio tab shows a live indicator (via Windows Spatial Audio API) confirming whether the Dolby Atmos format is available on the system.
 - **Logs Tab:** Session history for the last 10 speed changes — trigger mode, duration, and original speed recorded automatically.
 - **Streaming App Detection:** StreamTweak locates the log folder of the active streaming server and lets you open it in Explorer with one click.
 - **About Tab:** Version info, GitHub link, license badge, and donation button in a dedicated panel.
@@ -79,6 +92,23 @@ SessionEntry {
 
 The same discovery pipeline used for log monitoring (`LogParser.FindStreamingAppInfo`) is surfaced in the Logs tab, so the user can verify at a glance which streaming server StreamTweak has detected and navigate directly to its log folder.
 
+### Auto Dolby Atmos for Headphones (v3.1.0+)
+When a streaming session is detected and remains active for 30 continuous seconds, `DolbyAudioMonitor` queries the Windows Spatial Audio API (`SpatialAudioDeviceConfiguration`) on Steam Streaming Speakers and sets Dolby Atmos for Headphones as the active spatial audio format. Detection of [Dolby Access](https://apps.microsoft.com/detail/9n0866fs04w8) also uses the same API — if any render device reports `DolbyAtmosForHeadphones` as a supported format, the feature is considered available.
+
+```
+Streaming event detected
+        │
+        ▼
+30-second countdown (cancellable on stream stop)
+        │
+        ▼
+SpatialAudioDeviceConfiguration.GetForDeviceId(Steam Streaming Speakers)
+        │
+        ├─ IsSpatialAudioSupported? ──No──► status: not supported
+        ├─ IsSpatialAudioFormatSupported(DolbyAtmos)? ──No──► status: Dolby Access not installed
+        └─ SetDefaultSpatialAudioFormatAsync(DolbyAtmos) ──► status: ✓ enabled
+```
+
 ## 🎮 How It Works
 
 ### Auto Streaming Mode
@@ -100,9 +130,17 @@ The same discovery pipeline used for log monitoring (`LogParser.FindStreamingApp
 3. Network throttles to 1Gbps immediately — no UAC prompt
 4. Click "Stop Streaming Mode" to restore original speed
 
+### Auto Dolby Atmos for Headphones
+1. Install [Dolby Access](https://apps.microsoft.com/detail/9n0866fs04w8) on the host PC and enable it at least once
+2. Enable "Auto Dolby Atmos for Headphones" in the Audio tab (or from the tray menu)
+3. The Audio tab will show a green indicator confirming Dolby Atmos for Headphones is detected
+4. When a streaming session starts and stays active for **30 seconds**, StreamTweak automatically sets Dolby Atmos for Headphones as the active spatial audio format on Steam Streaming Speakers
+5. The Status box in the Audio tab turns **green** to confirm activation
+6. When the streaming session ends, the countdown is cancelled — activation only happens once per session
+
 ## 📝 Installation
 1. Go to the **Releases** page of this repository.
-2. Download the latest `StreamTweak_3.0.0_Installer.exe`
+2. Download the latest `StreamTweak_3.1.0_Installer.exe`
 3. Run the installer and enjoy seamless streaming.
 
 ## 🙏 Support the Project

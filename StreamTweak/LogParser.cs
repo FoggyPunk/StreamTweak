@@ -283,7 +283,10 @@ namespace StreamTweak
             {
                 string? installDir = GetInstallDirFromRegistry(appName);
                 if (!string.IsNullOrEmpty(installDir))
-                    return BuildStreamingAppInfo(appName, installDir);
+                {
+                    var info = BuildStreamingAppInfo(appName, installDir);
+                    if (info != null) return info;
+                }
             }
 
             var searchRoots = new List<string>();
@@ -297,13 +300,16 @@ namespace StreamTweak
                 {
                     string candidate = Path.Combine(root, appName);
                     if (Directory.Exists(candidate))
-                        return BuildStreamingAppInfo(appName, candidate);
+                    {
+                        var info = BuildStreamingAppInfo(appName, candidate);
+                        if (info != null) return info;
+                    }
                 }
 
             return null;
         }
 
-        private static StreamingAppInfo BuildStreamingAppInfo(string appName, string installDir)
+        private static StreamingAppInfo? BuildStreamingAppInfo(string appName, string installDir)
         {
             var info = new StreamingAppInfo { AppName = appName };
 
@@ -315,6 +321,9 @@ namespace StreamTweak
                     ?? exes.FirstOrDefault();
             }
             catch { }
+
+            if (string.IsNullOrEmpty(info.ExePath))
+                return null;
 
             string configDir = Path.Combine(installDir, "config");
             string logsDir   = Path.Combine(configDir, "logs");

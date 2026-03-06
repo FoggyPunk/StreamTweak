@@ -8,7 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Hardcodet.Wpf.TaskbarNotification;
 
-[assembly: System.Runtime.Versioning.SupportedOSPlatform("windows10.0.17763.0")]
+[assembly: System.Runtime.Versioning.SupportedOSPlatform("windows10.0.19041.0")]
 
 namespace StreamTweak
 {
@@ -28,6 +28,10 @@ namespace StreamTweak
         private bool isAutoStreamingActive = false;
         private string? originalSpeedForAutoStreaming = null;
         private bool isAutoStreamingEnabled = true;
+
+        // Dolby audio monitoring
+        private readonly DolbyAudioMonitor _dolbyMonitor = new();
+        private bool isAudioMonitorEnabled = false;
 
         // Inactivity timer — prevents restoring speed on temporary reconnect disconnects
         private System.Windows.Threading.DispatcherTimer? inactivityTimer = null;
@@ -53,6 +57,8 @@ namespace StreamTweak
             ToastHelper.Initialize("StreamTweak", iconPath);
 
             StartAutoStreamingMonitor();
+            _dolbyMonitor.StatusChanged += OnDolbyStatusChanged;
+            StartDolbyMonitor();
         }
 
         private void LoadConfig()
@@ -79,6 +85,9 @@ namespace StreamTweak
                     isAutoStreamingEnabled = autoEl.GetBoolean();
                 else
                     isAutoStreamingEnabled = true;
+
+                if (root.TryGetProperty("AudioMonitorEnabled", out var audioEl))
+                    isAudioMonitorEnabled = audioEl.GetBoolean();
             }
             catch { }
         }
@@ -182,6 +191,14 @@ namespace StreamTweak
                     ? "Auto Mode: Enabled"
                     : "Auto Mode: Disabled";
             }
+
+            if (DolbyModeMenuItem != null)
+            {
+                DolbyModeMenuItem.IsChecked = isAudioMonitorEnabled;
+                DolbyModeMenuItem.Header = isAudioMonitorEnabled
+                    ? "Dolby Atmos: Enabled"
+                    : "Dolby Atmos: Disabled";
+            }
         }
 
         private MenuItem? SpeedStatusMenuItem =>
@@ -192,6 +209,8 @@ namespace StreamTweak
             GetMenuItem("StreamingModeMenuItem");
         private MenuItem? AutoModeMenuItem =>
             GetMenuItem("AutoModeMenuItem");
+        private MenuItem? DolbyModeMenuItem =>
+            GetMenuItem("DolbyModeMenuItem");
 
         private MenuItem? GetMenuItem(string name) =>
             tb?.ContextMenu?.Items.OfType<MenuItem>()
@@ -306,6 +325,44 @@ namespace StreamTweak
             settingsWindow?.SyncAutoStreamingState(isAutoStreamingEnabled);
         }
 
+        private void MenuDolbyMode_Click(object sender, RoutedEventArgs e)
+        {
+            isAudioMonitorEnabled = !isAudioMonitorEnabled;
+            SaveAudioMonitorToConfig(isAudioMonitorEnabled);
+            UpdateTrayMenu();
+
+            if (isAudioMonitorEnabled)
+            {
+                StartDolbyMonitor();
+                StartAutoStreamingMonitor();
+            }
+            else
+            {
+                _dolbyMonitor.Disable();
+                StopAutoStreamingMonitor();
+            }
+
+            settingsWindow?.SyncAudioMonitorState(isAudioMonitorEnabled);
+            settingsWindow?.SyncDolbyMonitorStatus(
+                _dolbyMonitor.IsEnabled ? "Ready — waiting for next stream…" : "Disabled.");
+        }
+
+        private void SaveAudioMonitorToConfig(bool enabled)
+        {
+            try
+            {
+                string configPath = GetConfigPath();
+                string json = File.Exists(configPath) ? File.ReadAllText(configPath) : "{}";
+                var configData = JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, object>>(json)
+                                 ?? new System.Collections.Generic.Dictionary<string, object>();
+                configData["AudioMonitorEnabled"] = enabled;
+                Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+                File.WriteAllText(configPath, JsonSerializer.Serialize(configData,
+                    new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { }
+        }
+
         private void SaveAutoStreamingToConfig(bool enabled)
         {
             try
@@ -371,12 +428,32 @@ namespace StreamTweak
                         StopAutoStreamingMonitor();
                 };
 
+                settingsWindow.AudioMonitorEnabledChanged += (s, args) =>
+                {
+                    LoadConfig();
+                    if (isAudioMonitorEnabled)
+                    {
+                        StartDolbyMonitor();
+                        StartAutoStreamingMonitor();
+                    }
+                    else
+                    {
+                        _dolbyMonitor.Disable();
+                        StopAutoStreamingMonitor();
+                    }
+                    UpdateTrayMenu();
+                };
+
                 settingsWindow.Closed += (s, args) =>
                 {
                     LoadConfig();
                     UpdateTrayMenu();
                     settingsWindow = null;
                 };
+
+                settingsWindow.SyncAudioMonitorState(isAudioMonitorEnabled);
+                settingsWindow.SyncDolbyMonitorStatus(
+                    _dolbyMonitor.IsEnabled ? "Monitoring for Steam Streaming Speakers…" : "Disabled.");
 
                 settingsWindow.Show();
             }
@@ -393,7 +470,8 @@ namespace StreamTweak
 
         private void MenuExit_Click(object sender, RoutedEventArgs e)
         {
-            StopAutoStreamingMonitor();
+            StopLogMonitorForced();
+            _dolbyMonitor.Disable();
             tb?.Dispose();
             Application.Current.Shutdown();
         }
@@ -402,7 +480,8 @@ namespace StreamTweak
 
         private void StartAutoStreamingMonitor()
         {
-            if (!isAutoStreamingEnabled || logMonitor != null) return;
+            if (logMonitor != null) return;
+            if (!isAutoStreamingEnabled && !isAudioMonitorEnabled) return;
 
             try
             {
@@ -414,6 +493,12 @@ namespace StreamTweak
         }
 
         private void StopAutoStreamingMonitor()
+        {
+            if (isAutoStreamingEnabled || isAudioMonitorEnabled) return;
+            StopLogMonitorForced();
+        }
+
+        private void StopLogMonitorForced()
         {
             try
             {
@@ -434,15 +519,19 @@ namespace StreamTweak
             {
                 Application.Current.Dispatcher.Invoke(() =>
                 {
-                    if (e.Event == LogParser.StreamingEvent.StreamStarted && !isAutoStreamingActive)
+                    if (e.Event == LogParser.StreamingEvent.StreamStarted)
                     {
-                        HandleAutoStreamStart();
+                        _dolbyMonitor.OnStreamingStarted();
+                        if (!isAutoStreamingActive)
+                            HandleAutoStreamStart();
                     }
-                    else if (e.Event == LogParser.StreamingEvent.StreamStopped && isAutoStreamingActive)
+                    else if (e.Event == LogParser.StreamingEvent.StreamStopped)
                     {
                         if (inactivityTimer == null || !inactivityTimer.IsEnabled)
                         {
-                            HandleAutoStreamStop();
+                            _dolbyMonitor.OnStreamingStopped();
+                            if (isAutoStreamingActive)
+                                HandleAutoStreamStop();
                         }
                         else
                         {
@@ -557,6 +646,22 @@ namespace StreamTweak
         {
             inactivityTimer?.Stop();
             DebugLog("Inactivity timer stopped");
+        }
+
+        #endregion
+
+        #region Dolby Audio Monitoring
+
+        private void StartDolbyMonitor()
+        {
+            if (!isAudioMonitorEnabled || _dolbyMonitor.IsEnabled) return;
+            _dolbyMonitor.Enable();
+        }
+
+        private void OnDolbyStatusChanged(string status)
+        {
+            Application.Current.Dispatcher.Invoke(() =>
+                settingsWindow?.SyncDolbyMonitorStatus(status));
         }
 
         #endregion

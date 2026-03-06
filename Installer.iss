@@ -1,8 +1,8 @@
 ; =====================================================
-; StreamTweak v3.0.0 - GitHub Release Installer
+; StreamTweak v3.1.0 - GitHub Release Installer
 ; =====================================================
 #define MyAppName "StreamTweak"
-#define MyAppVersion "3.0.0"
+#define MyAppVersion "3.1.0"
 #define MyAppPublisher "FoggyPunk"
 #define MyAppExeName "StreamTweak.exe"
 #define MyAppURL "https://github.com/FoggyPunk/StreamTweak"
@@ -46,7 +46,7 @@ Name: "autostart"; Description: "Start {#MyAppName} automatically when Windows s
 
 [Files]
 ; Main application
-Source: "StreamTweak\bin\Release\net8.0-windows10.0.17763.0\win-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "StreamTweak\bin\Release\net8.0-windows10.0.19041.0\win-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "StreamTweak\Resources\*"; DestDir: "{app}\Resources"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "StreamTweak\Resources\streamtweak.bmp"; Flags: dontcopy
 Source: "changelog.txt"; DestDir: "{app}"; Flags: ignoreversion
