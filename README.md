@@ -97,4 +97,4 @@ If this tool helped you fix your Moonlight stutters or made managing your PC eas
 [![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/foggypunk)
 
 ## License
-![License](https://img.shields.io/badge/License-MIT-green.svg)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-green.svg)](https://www.gnu.org/licenses/gpl-3.0)
