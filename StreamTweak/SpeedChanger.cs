@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.IO.Pipes;
-using System.ServiceProcess;
 using System.Text.Json;
 
 namespace StreamTweak
@@ -76,20 +75,6 @@ Restart-NetAdapter -Name $adapterName -Confirm:$false
                 if (File.Exists(tempScript))
                     try { File.Delete(tempScript); } catch { }
             }
-        }
-
-        /// <summary>
-        /// Returns true if the StreamTweakService Windows Service is installed and running.
-        /// Called every time before Apply() — result is never cached.
-        /// </summary>
-        public static bool IsTaskInstalled()
-        {
-            try
-            {
-                using var sc = new ServiceController(ServiceName);
-                return sc.Status == ServiceControllerStatus.Running;
-            }
-            catch { return false; }
         }
     }
 }

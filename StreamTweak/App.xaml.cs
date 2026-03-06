@@ -8,7 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Hardcodet.Wpf.TaskbarNotification;
 
-[assembly: System.Runtime.Versioning.SupportedOSPlatform("windows")]
+[assembly: System.Runtime.Versioning.SupportedOSPlatform("windows10.0.17763.0")]
 
 namespace StreamTweak
 {
@@ -16,30 +16,26 @@ namespace StreamTweak
     {
         private TaskbarIcon tb = default!;
         private string adapterName = "Ethernet";
-        private readonly string iconOkPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"Resources\streammodeok.ico");
-        private readonly string iconKoPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"Resources\streammodeko.ico");
+        private readonly string iconOkPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"Resources\streammodeok.ico");
+        private readonly string iconKoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"Resources\streammodeko.ico");
 
         private SettingsWindow? settingsWindow = null;
         private bool isStreamingModeActive = false;
         private string originalSpeedForStreaming = string.Empty;
 
-        // Auto-monitoring fields
+        // Auto-monitoring
         private StreamingLogMonitor? logMonitor = null;
         private bool isAutoStreamingActive = false;
         private string? originalSpeedForAutoStreaming = null;
         private bool isAutoStreamingEnabled = true;
 
-        // Inactivity timer to prevent reconnect loops after speed change
+        // Inactivity timer — prevents restoring speed on temporary reconnect disconnects
         private System.Windows.Threading.DispatcherTimer? inactivityTimer = null;
         private const int INACTIVITY_TIMEOUT_MS = 30000;
 
-        private string GetConfigPath()
-        {
-            string appFolder = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "StreamTweak");
-            return System.IO.Path.Combine(appFolder, "config.json");
-        }
+        private string GetConfigPath() => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StreamTweak", "config.json");
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -50,7 +46,12 @@ namespace StreamTweak
 
             tb = (TaskbarIcon)FindResource("MyNotifyIcon")!;
             UpdateIconBasedOnSpeed(false);
-            UpdateStreamingMenuItem();
+            UpdateTrayMenu();
+
+            // Initialize WinRT toast notifications
+            string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"Resources\streamtweak.ico");
+            ToastHelper.Initialize("StreamTweak", iconPath);
+
             StartAutoStreamingMonitor();
         }
 
@@ -59,38 +60,34 @@ namespace StreamTweak
             try
             {
                 string configPath = GetConfigPath();
-                if (File.Exists(configPath))
-                {
-                    string json = File.ReadAllText(configPath);
-                    using (JsonDocument document = JsonDocument.Parse(json))
-                    {
-                        var root = document.RootElement;
+                if (!File.Exists(configPath)) return;
 
-                        if (root.TryGetProperty("NetworkAdapterName", out JsonElement adapterElement))
-                            adapterName = adapterElement.GetString() ?? "Ethernet";
+                string json = File.ReadAllText(configPath);
+                using var document = JsonDocument.Parse(json);
+                var root = document.RootElement;
 
-                        if (root.TryGetProperty("StreamingMode", out JsonElement streamingElement))
-                            isStreamingModeActive = streamingElement.GetBoolean();
+                if (root.TryGetProperty("NetworkAdapterName", out var adapterEl))
+                    adapterName = adapterEl.GetString() ?? "Ethernet";
 
-                        if (root.TryGetProperty("OriginalSpeed", out JsonElement originalSpeedElement))
-                            originalSpeedForStreaming = originalSpeedElement.GetString() ?? string.Empty;
+                if (root.TryGetProperty("StreamingMode", out var streamingEl))
+                    isStreamingModeActive = streamingEl.GetBoolean();
 
-                        if (root.TryGetProperty("AutoStreamingEnabled", out JsonElement autoStreamingElement))
-                            isAutoStreamingEnabled = autoStreamingElement.GetBoolean();
-                        else
-                            isAutoStreamingEnabled = true;
-                    }
-                }
+                if (root.TryGetProperty("OriginalSpeed", out var originalSpeedEl))
+                    originalSpeedForStreaming = originalSpeedEl.GetString() ?? string.Empty;
+
+                if (root.TryGetProperty("AutoStreamingEnabled", out var autoEl))
+                    isAutoStreamingEnabled = autoEl.GetBoolean();
+                else
+                    isAutoStreamingEnabled = true;
             }
             catch { }
         }
 
-        // Returns true if current speed is ~1 Gbps (streaming sweet spot)
         private bool IsCurrentSpeed1G()
         {
             var ni = NetworkInterface.GetAllNetworkInterfaces()
                 .FirstOrDefault(n => n.Name.Equals(adapterName, StringComparison.OrdinalIgnoreCase));
-            if (ni != null && ni.OperationalStatus == OperationalStatus.Up)
+            if (ni?.OperationalStatus == OperationalStatus.Up)
             {
                 long mbps = ni.Speed / 1_000_000;
                 return mbps >= 900 && mbps <= 1100;
@@ -98,49 +95,39 @@ namespace StreamTweak
             return false;
         }
 
-        private bool UpdateIconBasedOnSpeed(bool showNotification = false)
+        private (long mbps, bool connected) GetCurrentSpeed()
+        {
+            var ni = NetworkInterface.GetAllNetworkInterfaces()
+                .FirstOrDefault(n => n.Name.Equals(adapterName, StringComparison.OrdinalIgnoreCase));
+            if (ni?.OperationalStatus == OperationalStatus.Up)
+                return (ni.Speed / 1_000_000, true);
+            return (0, false);
+        }
+
+        private bool UpdateIconBasedOnSpeed(bool showToast = false)
         {
             try
             {
-                long speedBps = 0;
+                var (mbps, connected) = GetCurrentSpeed();
 
-                var ni = NetworkInterface.GetAllNetworkInterfaces()
-                    .FirstOrDefault(n => n.Name.Equals(adapterName, StringComparison.OrdinalIgnoreCase));
-
-                if (ni != null && ni.OperationalStatus == OperationalStatus.Up)
-                    speedBps = ni.Speed;
-
-                string currentSpeedText;
-
-                if (speedBps <= 0)
+                if (!connected)
                 {
                     tb.Icon = new System.Drawing.Icon(iconKoPath);
-                    currentSpeedText = "Disconnected / Negotiating";
-                    tb.ToolTipText = $"Network: {adapterName}\nStatus: {currentSpeedText}";
+                    tb.ToolTipText = $"StreamTweak\n{adapterName}: Disconnected / Negotiating";
                     return false;
                 }
 
-                long mbps = speedBps / 1_000_000;
                 bool is1G = mbps >= 900 && mbps <= 1100;
-
-                // streammodeok = 1 Gbps (streaming sweet spot), streammodeko = everything else
                 tb.Icon = new System.Drawing.Icon(is1G ? iconOkPath : iconKoPath);
 
-                currentSpeedText = speedBps >= 1_000_000_000
-                    ? $"{(speedBps / 1_000_000_000.0):0.##} Gbps"
-                    : $"{mbps:0.##} Mbps";
+                string speedText = mbps >= 1000
+                    ? $"{mbps / 1000.0:0.##} Gbps"
+                    : $"{mbps} Mbps";
 
-                tb.ToolTipText = $"Network: {adapterName}\nCurrent Link Speed: {currentSpeedText}";
+                tb.ToolTipText = $"StreamTweak\n{adapterName}: {speedText}";
 
-                if (showNotification)
-                {
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        tb.ShowBalloonTip("Network Speed Applied",
-                                          $"{adapterName} is now connected at {currentSpeedText}.",
-                                          BalloonIcon.Info);
-                    });
-                }
+                if (showToast)
+                    ToastHelper.Show("Speed Applied", $"{adapterName} is now at {speedText}.");
 
                 return true;
             }
@@ -152,38 +139,71 @@ namespace StreamTweak
             }
         }
 
-        private void UpdateStreamingMenuItem()
+        /// <summary>
+        /// Updates all dynamic tray menu items: speed, streaming status, auto mode checkbox.
+        /// </summary>
+        private void UpdateTrayMenu()
         {
-            var menuItem = tb?.ContextMenu?.Items
-                .OfType<MenuItem>()
-                .FirstOrDefault(m => m.Header?.ToString()?.Contains("Streaming") == true);
+            if (tb?.ContextMenu == null) return;
 
-            if (menuItem == null) return;
+            var (mbps, connected) = GetCurrentSpeed();
+            string speedText = !connected
+                ? "Speed: Disconnected"
+                : mbps >= 1000
+                    ? $"Speed: {mbps / 1000.0:0.##} Gbps"
+                    : $"Speed: {mbps} Mbps";
 
-            if (isStreamingModeActive)
+            if (SpeedStatusMenuItem != null)
+                SpeedStatusMenuItem.Header = speedText;
+
+            if (StreamingStatusMenuItem != null)
+                StreamingStatusMenuItem.Header = isStreamingModeActive
+                    ? "Streaming: Active ●"
+                    : "Streaming: Inactive";
+
+            if (StreamingModeMenuItem != null)
             {
-                menuItem.Header = "Stop Streaming Mode";
-                menuItem.IsEnabled = true;
+                if (isStreamingModeActive)
+                {
+                    StreamingModeMenuItem.Header = "Stop Streaming Mode";
+                    StreamingModeMenuItem.IsEnabled = true;
+                }
+                else
+                {
+                    StreamingModeMenuItem.Header = "Start Streaming Mode";
+                    StreamingModeMenuItem.IsEnabled = !IsCurrentSpeed1G();
+                }
             }
-            else
+
+            if (AutoModeMenuItem != null)
             {
-                menuItem.Header = "Start Streaming Mode";
-                menuItem.IsEnabled = !IsCurrentSpeed1G();
+                AutoModeMenuItem.IsChecked = isAutoStreamingEnabled;
+                AutoModeMenuItem.Header = isAutoStreamingEnabled
+                    ? "Auto Mode: Enabled"
+                    : "Auto Mode: Disabled";
             }
         }
 
-        // Applies a speed change via SpeedChanger (UAC-free if service is running, UAC fallback otherwise)
-        private void ApplySpeedFromTray(string speedKey)
+        private MenuItem? SpeedStatusMenuItem =>
+            GetMenuItem("SpeedStatusMenuItem");
+        private MenuItem? StreamingStatusMenuItem =>
+            GetMenuItem("StreamingStatusMenuItem");
+        private MenuItem? StreamingModeMenuItem =>
+            GetMenuItem("StreamingModeMenuItem");
+        private MenuItem? AutoModeMenuItem =>
+            GetMenuItem("AutoModeMenuItem");
+
+        private MenuItem? GetMenuItem(string name) =>
+            tb?.ContextMenu?.Items.OfType<MenuItem>()
+              .FirstOrDefault(m => m.Name == name);
+
+        private void ApplySpeed(string speedKey)
         {
             var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
-            if (speeds == null || !speeds.ContainsKey(speedKey)) return;
+            if (speeds == null || !speeds.TryGetValue(speedKey, out string? registryValue)) return;
 
-            string registryValue = speeds[speedKey];
-
-            if (SpeedChanger.IsTaskInstalled())
-                SpeedChanger.Apply(adapterName, registryValue);
-            else
-                SpeedChanger.ApplyWithUac(adapterName, registryValue);
+            bool ok = SpeedChanger.Apply(adapterName, registryValue);
+            if (!ok) SpeedChanger.ApplyWithUac(adapterName, registryValue);
         }
 
         private string? Find1GbpsKey()
@@ -193,11 +213,10 @@ namespace StreamTweak
 
             foreach (var kvp in speeds)
             {
-                string keyLower = kvp.Key.ToLower();
-                bool nameMatch = (keyLower.Contains("1 gbps") || keyLower.Contains("1gbps") ||
-                                  keyLower.Contains("1000")) && keyLower.Contains("full");
-                bool valueMatch = kvp.Value == "6";
-                if (nameMatch || valueMatch) return kvp.Key;
+                string kl = kvp.Key.ToLower();
+                bool nameMatch = (kl.Contains("1 gbps") || kl.Contains("1gbps") ||
+                                  kl.Contains("1000")) && kl.Contains("full");
+                if (nameMatch || kvp.Value == "6") return kvp.Key;
             }
             return null;
         }
@@ -208,10 +227,13 @@ namespace StreamTweak
             {
                 string configPath = GetConfigPath();
                 string json = File.Exists(configPath) ? File.ReadAllText(configPath) : "{}";
-                var configData = JsonSerializer.Deserialize<Dictionary<string, object>>(json) ?? new Dictionary<string, object>();
+                var configData = JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, object>>(json)
+                                 ?? new System.Collections.Generic.Dictionary<string, object>();
                 configData["StreamingMode"] = streamingMode;
                 configData["OriginalSpeed"] = originalSpeedKey;
-                File.WriteAllText(configPath, JsonSerializer.Serialize(configData, new JsonSerializerOptions { WriteIndented = true }));
+                Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+                File.WriteAllText(configPath, JsonSerializer.Serialize(configData,
+                    new JsonSerializerOptions { WriteIndented = true }));
             }
             catch { }
         }
@@ -220,6 +242,7 @@ namespace StreamTweak
         {
             if (!isStreamingModeActive)
             {
+                // Capture current speed as original
                 var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
                 if (speeds != null)
                 {
@@ -248,44 +271,75 @@ namespace StreamTweak
 
                 isStreamingModeActive = true;
                 SaveStreamingStateToConfig(true, originalSpeedForStreaming);
-                UpdateStreamingMenuItem();
-                ApplySpeedFromTray(oneGbpsKey);
+                SessionLogger.StartSession("Manual", originalSpeedForStreaming);
+                ApplySpeed(oneGbpsKey);
                 await PollForIconUpdate(true);
             }
             else
             {
                 if (!string.IsNullOrEmpty(originalSpeedForStreaming))
-                    ApplySpeedFromTray(originalSpeedForStreaming);
+                    ApplySpeed(originalSpeedForStreaming);
 
+                SessionLogger.EndSession();
                 isStreamingModeActive = false;
                 SaveStreamingStateToConfig(false, string.Empty);
-                UpdateStreamingMenuItem();
                 await PollForIconUpdate(true);
+                ToastHelper.Show("Streaming Ended", "Network speed restored to original.");
             }
 
+            UpdateTrayMenu();
             settingsWindow?.SyncStreamingState(isStreamingModeActive, originalSpeedForStreaming);
+            settingsWindow?.RefreshSessionHistory();
         }
 
-        private async Task PollForIconUpdate(bool showNotification)
+        private void MenuAutoMode_Click(object sender, RoutedEventArgs e)
         {
-            tb.ToolTipText = "Renegotiating link speed... please wait.";
+            isAutoStreamingEnabled = !isAutoStreamingEnabled;
+            SaveAutoStreamingToConfig(isAutoStreamingEnabled);
+            UpdateTrayMenu();
+
+            if (isAutoStreamingEnabled)
+                StartAutoStreamingMonitor();
+            else
+                StopAutoStreamingMonitor();
+
+            settingsWindow?.SyncAutoStreamingState(isAutoStreamingEnabled);
+        }
+
+        private void SaveAutoStreamingToConfig(bool enabled)
+        {
+            try
+            {
+                string configPath = GetConfigPath();
+                string json = File.Exists(configPath) ? File.ReadAllText(configPath) : "{}";
+                var configData = JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, object>>(json)
+                                 ?? new System.Collections.Generic.Dictionary<string, object>();
+                configData["AutoStreamingEnabled"] = enabled;
+                Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+                File.WriteAllText(configPath, JsonSerializer.Serialize(configData,
+                    new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { }
+        }
+
+        private async Task PollForIconUpdate(bool showToast)
+        {
+            tb.ToolTipText = $"StreamTweak\n{adapterName}: Renegotiating...";
             await Task.Delay(3000);
 
             int attempts = 0;
-            bool isConnected = false;
+            bool connected = false;
 
             while (attempts < 15)
             {
-                isConnected = UpdateIconBasedOnSpeed(false);
-                if (isConnected) break;
+                connected = UpdateIconBasedOnSpeed(false);
+                if (connected) break;
                 await Task.Delay(1000);
                 attempts++;
             }
 
-            if (isConnected)
-                UpdateIconBasedOnSpeed(showNotification);
-
-            UpdateStreamingMenuItem();
+            if (connected) UpdateIconBasedOnSpeed(showToast);
+            UpdateTrayMenu();
             settingsWindow?.RefreshCurrentSpeedDisplay();
         }
 
@@ -304,12 +358,13 @@ namespace StreamTweak
                 settingsWindow.StreamingModeChanged += (s, args) =>
                 {
                     LoadConfig();
-                    UpdateStreamingMenuItem();
+                    UpdateTrayMenu();
                 };
 
                 settingsWindow.AutoStreamingEnabledChanged += (s, args) =>
                 {
                     LoadConfig();
+                    UpdateTrayMenu();
                     if (isAutoStreamingEnabled)
                         StartAutoStreamingMonitor();
                     else
@@ -319,7 +374,7 @@ namespace StreamTweak
                 settingsWindow.Closed += (s, args) =>
                 {
                     LoadConfig();
-                    UpdateStreamingMenuItem();
+                    UpdateTrayMenu();
                     settingsWindow = null;
                 };
 
@@ -347,10 +402,10 @@ namespace StreamTweak
 
         private void StartAutoStreamingMonitor()
         {
+            if (!isAutoStreamingEnabled || logMonitor != null) return;
+
             try
             {
-                if (!isAutoStreamingEnabled || logMonitor != null) return;
-
                 logMonitor = new StreamingLogMonitor();
                 logMonitor.StreamingEventDetected += LogMonitor_StreamingEventDetected;
                 logMonitor.StartMonitoring();
@@ -385,26 +440,16 @@ namespace StreamTweak
                     }
                     else if (e.Event == LogParser.StreamingEvent.StreamStopped && isAutoStreamingActive)
                     {
-                        // Ignore disconnect if inactivity timer is running (temporary disconnect due to speed change)
                         if (inactivityTimer == null || !inactivityTimer.IsEnabled)
+                        {
                             HandleAutoStreamStop();
+                        }
                         else
+                        {
                             DebugLog("StreamStopped ignored: inactivity timer active (likely temporary disconnect)");
+                        }
                     }
                 });
-            }
-            catch { }
-        }
-
-        private static void DebugLog(string message)
-        {
-            try
-            {
-                string debugLogPath = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "StreamTweak", "debug.log");
-                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(debugLogPath) ?? "");
-                File.AppendAllText(debugLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}{Environment.NewLine}");
             }
             catch { }
         }
@@ -421,10 +466,9 @@ namespace StreamTweak
                 if (ni == null || ni.OperationalStatus != OperationalStatus.Up) return;
 
                 long mbps = ni.Speed / 1_000_000;
+                if (mbps < 1200) return; // Already at or below 1 Gbps — nothing to do
 
-                // Only adjust if speed is higher than 1 Gbps
-                if (mbps < 1200) return;
-
+                // Capture original speed
                 var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
                 if (speeds != null)
                 {
@@ -443,21 +487,23 @@ namespace StreamTweak
 
                 var alert = new StreamingAdjustmentAlert();
                 alert.Show();
-                await Task.Delay(4000);
+                await Task.Delay(7900);
 
                 isAutoStreamingActive = true;
                 isStreamingModeActive = true;
-                ApplySpeedFromTray(oneGbpsKey);
+                ApplySpeed(oneGbpsKey);
                 SaveStreamingStateToConfig(true, originalSpeedForAutoStreaming ?? string.Empty);
-                StartInactivityTimer();
-                UpdateStreamingMenuItem();
-                await PollForIconUpdate(true);
+                SessionLogger.StartSession("Auto", originalSpeedForAutoStreaming ?? string.Empty);
 
-                tb.ShowBalloonTip("Streaming Detected",
-                    "Network speed automatically adjusted to 1 Gbps for optimal streaming.",
-                    BalloonIcon.Info);
+                StartInactivityTimer();
+                UpdateTrayMenu();
+                await PollForIconUpdate(false);
+
+                ToastHelper.Show("Streaming Detected",
+                    "Network speed set to 1 Gbps. Reconnect within 30 seconds.");
 
                 settingsWindow?.SyncStreamingState(true, originalSpeedForAutoStreaming ?? string.Empty);
+                settingsWindow?.RefreshSessionHistory();
             }
             catch { }
         }
@@ -469,55 +515,64 @@ namespace StreamTweak
                 if (!isAutoStreamingActive) return;
 
                 if (!string.IsNullOrEmpty(originalSpeedForAutoStreaming))
-                    ApplySpeedFromTray(originalSpeedForAutoStreaming);
+                    ApplySpeed(originalSpeedForAutoStreaming);
 
+                SessionLogger.EndSession();
                 isAutoStreamingActive = false;
                 isStreamingModeActive = false;
                 originalSpeedForAutoStreaming = null;
+
                 StopInactivityTimer();
-                UpdateStreamingMenuItem();
-                await PollForIconUpdate(true);
+                UpdateTrayMenu();
+                await PollForIconUpdate(false);
                 SaveStreamingStateToConfig(false, string.Empty);
 
-                tb.ShowBalloonTip("Streaming Ended",
-                    "Network speed automatically restored.",
-                    BalloonIcon.Info);
+                ToastHelper.Show("Streaming Ended", "Network speed restored to original.");
 
                 settingsWindow?.SyncStreamingState(false, string.Empty);
+                settingsWindow?.RefreshSessionHistory();
             }
             catch { }
         }
 
         private void StartInactivityTimer()
         {
-            try
+            if (inactivityTimer == null)
             {
-                if (inactivityTimer == null)
+                inactivityTimer = new System.Windows.Threading.DispatcherTimer
                 {
-                    inactivityTimer = new System.Windows.Threading.DispatcherTimer();
-                    inactivityTimer.Interval = TimeSpan.FromMilliseconds(INACTIVITY_TIMEOUT_MS);
-                    inactivityTimer.Tick += (s, e) =>
-                    {
-                        StopInactivityTimer();
-                        DebugLog("Inactivity timer expired — no reconnection detected");
-                    };
-                }
-                inactivityTimer.Start();
-                DebugLog($"Inactivity timer started ({INACTIVITY_TIMEOUT_MS}ms)");
+                    Interval = TimeSpan.FromMilliseconds(INACTIVITY_TIMEOUT_MS)
+                };
+                inactivityTimer.Tick += (s, e) =>
+                {
+                    StopInactivityTimer();
+                    DebugLog("Inactivity timer expired — no reconnection detected");
+                };
             }
-            catch { }
+            inactivityTimer.Start();
+            DebugLog($"Inactivity timer started ({INACTIVITY_TIMEOUT_MS}ms)");
         }
 
         private void StopInactivityTimer()
         {
-            try
-            {
-                inactivityTimer?.Stop();
-                DebugLog("Inactivity timer stopped");
-            }
-            catch { }
+            inactivityTimer?.Stop();
+            DebugLog("Inactivity timer stopped");
         }
 
         #endregion
+
+        private static void DebugLog(string message)
+        {
+            try
+            {
+                string debugLogPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "StreamTweak", "debug.log");
+                Directory.CreateDirectory(Path.GetDirectoryName(debugLogPath)!);
+                File.AppendAllText(debugLogPath,
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}{Environment.NewLine}");
+            }
+            catch { }
+        }
     }
 }

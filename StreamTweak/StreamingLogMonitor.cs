@@ -148,8 +148,6 @@ namespace StreamTweak
             {
                 DebugLog($"Error during rediscovery: {ex.Message}");
             }
-
-            await Task.CompletedTask;
         }
 
         /// <summary>

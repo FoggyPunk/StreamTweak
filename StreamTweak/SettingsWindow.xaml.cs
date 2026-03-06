@@ -1,17 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.IO;
-using Microsoft.Management.Infrastructure;
-using System.Windows.Media;
 using System.Windows.Interop;
+using System.Windows.Media;
+using Microsoft.Management.Infrastructure;
 using Microsoft.Win32;
-using System.Threading.Tasks;
 
 namespace StreamTweak
 {
@@ -22,7 +22,6 @@ namespace StreamTweak
         private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
 
         private readonly string configFilePath;
-        public bool HasAppliedChanges { get; private set; } = false;
         private Dictionary<string, string>? currentAdapterSpeeds;
         private bool isDarkMode = false;
         private bool isStreamingMode = false;
@@ -34,41 +33,45 @@ namespace StreamTweak
         public event EventHandler? StreamingModeChanged;
         public event EventHandler? AutoStreamingEnabledChanged;
 
-        private static readonly SolidColorBrush StreamingStartBrush    = new SolidColorBrush(Color.FromRgb(168, 213, 162));
-        private static readonly SolidColorBrush StreamingStopBrush     = new SolidColorBrush(Color.FromRgb(244, 168, 168));
-        private static readonly SolidColorBrush StreamingDisabledBrush = new SolidColorBrush(Color.FromRgb(180, 180, 180));
+        private static readonly SolidColorBrush StreamingStartBrush   = new(Color.FromRgb(168, 213, 162));
+        private static readonly SolidColorBrush StreamingStopBrush    = new(Color.FromRgb(244, 168, 168));
+        private static readonly SolidColorBrush StreamingDisabledBrush = new(Color.FromRgb(180, 180, 180));
 
         public SettingsWindow()
         {
             InitializeComponent();
 
             this.Icon = new System.Windows.Media.Imaging.BitmapImage(
-                new Uri(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                new Uri(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
                     @"Resources\streamtweak.ico"), UriKind.Absolute));
 
-            string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string appFolder = Path.Combine(appDataPath, "StreamTweak");
-
-            if (!Directory.Exists(appFolder))
-                Directory.CreateDirectory(appFolder);
-
+            string appFolder = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "StreamTweak");
+            Directory.CreateDirectory(appFolder);
             configFilePath = Path.Combine(appFolder, "config.json");
 
-            this.SourceInitialized += SettingsWindow_SourceInitialized;
+            this.SourceInitialized += (_, _) => UpdateTitleBarTheme();
 
             ApplySystemAccentColor();
             LoadConfig();
             LoadNetworkAdapters();
+            RefreshSessionHistory();
         }
+
+        // ─── Public sync methods called from App.xaml.cs ───────────────────
 
         public void SyncStreamingState(bool streamingActive, string originalSpeedKey)
         {
             isStreamingMode = streamingActive;
             originalSpeed = originalSpeedKey;
             UpdateStreamingButtonAppearance();
+        }
 
-            if (isStreamingMode && SpeedComboBox.Items.Contains("1.0 Gbps Full Duplex"))
-                SpeedComboBox.SelectedItem = "1.0 Gbps Full Duplex";
+        public void SyncAutoStreamingState(bool enabled)
+        {
+            isAutoStreamingEnabled = enabled;
+            AutoStreamingToggle.IsChecked = enabled;
         }
 
         public void RefreshCurrentSpeedDisplay()
@@ -77,47 +80,22 @@ namespace StreamTweak
                 UpdateCurrentSpeedDisplay(currentAdapterName);
         }
 
-        private void UpdateStreamingButtonAppearance()
+        public void RefreshSessionHistory()
         {
-            if (isStreamingMode)
+            var sessions = SessionLogger.Load();
+            if (sessions.Count == 0)
             {
-                StreamingModeButton.Content = "Stop Streaming Mode";
-                StreamingModeButton.Background = StreamingStopBrush;
-                StreamingModeButton.Foreground = new SolidColorBrush(Color.FromRgb(32, 32, 32));
-                StreamingModeButton.IsEnabled = true;
-                StreamingModeButton.Opacity = 1.0;
+                SessionHistoryList.ItemsSource = null;
+                NoHistoryLabel.Visibility = Visibility.Visible;
             }
             else
             {
-                bool alreadyAt1G = IsCurrentSpeedAlready1G();
-                StreamingModeButton.Content = "Start Streaming Mode";
-                StreamingModeButton.IsEnabled = !alreadyAt1G;
-                StreamingModeButton.Opacity = alreadyAt1G ? 0.4 : 1.0;
-                StreamingModeButton.Background = alreadyAt1G ? StreamingDisabledBrush : StreamingStartBrush;
-                StreamingModeButton.Foreground = new SolidColorBrush(Color.FromRgb(32, 32, 32));
+                NoHistoryLabel.Visibility = Visibility.Collapsed;
+                SessionHistoryList.ItemsSource = sessions;
             }
         }
 
-        private bool IsCurrentSpeedAlready1G()
-        {
-            string adapterName = AdapterComboBox.SelectedItem?.ToString() ?? string.Empty;
-            if (string.IsNullOrEmpty(adapterName)) return false;
-
-            var adapter = NetworkInterface.GetAllNetworkInterfaces()
-                .FirstOrDefault(a => a.Name == adapterName && a.OperationalStatus == OperationalStatus.Up);
-
-            if (adapter != null)
-            {
-                long mbps = adapter.Speed / 1_000_000;
-                return mbps >= 900 && mbps <= 1100;
-            }
-            return false;
-        }
-
-        private void SettingsWindow_SourceInitialized(object? sender, EventArgs e)
-        {
-            UpdateTitleBarTheme();
-        }
+        // ─── Theme ──────────────────────────────────────────────────────────
 
         private void ApplySystemAccentColor()
         {
@@ -130,15 +108,12 @@ namespace StreamTweak
                     byte g = (byte)((abgr >> 8) & 0xFF);
                     byte b = (byte)((abgr >> 16) & 0xFF);
 
-                    var color = Color.FromArgb(255, r, g, b);
-                    var brush = new SolidColorBrush(color);
+                    var brush = new SolidColorBrush(Color.FromArgb(255, r, g, b));
                     brush.Freeze();
-
-                    var hoverColor = Color.FromArgb(255,
+                    var hoverBrush = new SolidColorBrush(Color.FromArgb(255,
                         (byte)Math.Max(0, r - 20),
                         (byte)Math.Max(0, g - 20),
-                        (byte)Math.Max(0, b - 20));
-                    var hoverBrush = new SolidColorBrush(hoverColor);
+                        (byte)Math.Max(0, b - 20)));
                     hoverBrush.Freeze();
 
                     this.Resources["AccentColor"] = brush;
@@ -153,13 +128,44 @@ namespace StreamTweak
         private void ThemeToggleButton_Click(object sender, RoutedEventArgs e)
         {
             ToggleTheme(!isDarkMode);
-            SaveThemeToConfig();
+            SaveConfig(saveAdapter: false);
+        }
+
+        private void SettingsTabButton_Click(object sender, RoutedEventArgs e)
+        {
+            SettingsPanel.Visibility = Visibility.Visible;
+            LogsPanel.Visibility     = Visibility.Collapsed;
+            AboutPanel.Visibility    = Visibility.Collapsed;
+            SettingsTabButton.Style  = (Style)this.Resources["TabButtonActive"];
+            LogsTabButton.Style      = (Style)this.Resources["TabButton"];
+            AboutTabButton.Style     = (Style)this.Resources["TabButton"];
+        }
+
+        private void LogsTabButton_Click(object sender, RoutedEventArgs e)
+        {
+            SettingsPanel.Visibility = Visibility.Collapsed;
+            LogsPanel.Visibility     = Visibility.Visible;
+            AboutPanel.Visibility    = Visibility.Collapsed;
+            SettingsTabButton.Style  = (Style)this.Resources["TabButton"];
+            LogsTabButton.Style      = (Style)this.Resources["TabButtonActive"];
+            AboutTabButton.Style     = (Style)this.Resources["TabButton"];
+            RefreshStreamingAppInfo();
+        }
+
+        private void AboutTabButton_Click(object sender, RoutedEventArgs e)
+        {
+            SettingsPanel.Visibility = Visibility.Collapsed;
+            LogsPanel.Visibility     = Visibility.Collapsed;
+            AboutPanel.Visibility    = Visibility.Visible;
+            SettingsTabButton.Style  = (Style)this.Resources["TabButton"];
+            LogsTabButton.Style      = (Style)this.Resources["TabButton"];
+            AboutTabButton.Style     = (Style)this.Resources["TabButtonActive"];
+            PopulateAboutInfo();
         }
 
         private void ToggleTheme(bool setDark)
         {
             isDarkMode = setDark;
-
             if (isDarkMode)
             {
                 this.Resources["WindowBackground"] = new SolidColorBrush(Color.FromRgb(32, 32, 32));
@@ -182,7 +188,6 @@ namespace StreamTweak
                 Application.Current.Resources["BorderColor"]      = new SolidColorBrush(Color.FromRgb(209, 209, 209));
                 ThemeToggleButton.Content = "🌙 Dark Mode";
             }
-
             UpdateTitleBarTheme();
         }
 
@@ -192,24 +197,141 @@ namespace StreamTweak
             {
                 var hwnd = new WindowInteropHelper(this).Handle;
                 if (hwnd != IntPtr.Zero)
-                {
-                    int[] darkThemeEnabled = new int[] { isDarkMode ? 1 : 0 };
-                    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, darkThemeEnabled, 4);
-                }
+                    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                        new[] { isDarkMode ? 1 : 0 }, 4);
             }
             catch { }
         }
 
-        private void SaveThemeToConfig()
+        private void RefreshStreamingAppInfo()
+        {
+            try
+            {
+                var info = LogParser.FindStreamingAppInfo();
+                if (info != null)
+                {
+                    StreamingAppFoundPanel.Visibility    = Visibility.Visible;
+                    StreamingAppNotFoundText.Visibility  = Visibility.Collapsed;
+                    StreamingAppNameText.Text            = info.AppName;
+                    StreamingAppLogPathText.Text         = info.LogFolderPath ?? "Log folder not found";
+                    StreamingAppIconImage.Source         = ExtractExeIcon(info.ExePath);
+                }
+                else
+                {
+                    StreamingAppFoundPanel.Visibility    = Visibility.Collapsed;
+                    StreamingAppNotFoundText.Visibility  = Visibility.Visible;
+                }
+            }
+            catch
+            {
+                StreamingAppFoundPanel.Visibility   = Visibility.Collapsed;
+                StreamingAppNotFoundText.Visibility = Visibility.Visible;
+            }
+        }
+
+        private static System.Windows.Media.ImageSource? ExtractExeIcon(string? exePath)
+        {
+            if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return null;
+            try
+            {
+                using var icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
+                if (icon == null) return null;
+                return System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                    icon.Handle,
+                    System.Windows.Int32Rect.Empty,
+                    System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+            }
+            catch { return null; }
+        }
+
+        private void StreamingAppLogPathText_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            string? path = StreamingAppLogPathText.Text;
+            if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
+                System.Diagnostics.Process.Start("explorer.exe", path);
+        }
+
+        private void PopulateAboutInfo()
+        {
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            AboutVersionText.Text = version != null
+                ? $"Version {version.Major}.{version.Minor}.{version.Build}"
+                : "Version 3.0.0";
+
+            string location = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            AboutBuildDateText.Text = File.Exists(location)
+                ? $"Build: {File.GetLastWriteTime(location):dd MMM yyyy}"
+                : string.Empty;
+        }
+
+        private void DonateButton_Click(object sender, RoutedEventArgs e)
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "https://paypal.me/foggypunk",
+                UseShellExecute = true
+            });
+        }
+
+        private void GplBadge_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "https://www.gnu.org/licenses/gpl-3.0",
+                UseShellExecute = true
+            });
+        }
+
+        private void GitHubButton_Click(object sender, RoutedEventArgs e)
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "https://github.com/FoggyPunk/StreamTweak",
+                UseShellExecute = true
+            });
+        }
+
+        // ─── Config ─────────────────────────────────────────────────────────
+
+        private void LoadConfig()
+        {
+            try
+            {
+                if (!File.Exists(configFilePath)) { ToggleTheme(false); AutoStreamingToggle.IsChecked = true; return; }
+
+                using var doc = JsonDocument.Parse(File.ReadAllText(configFilePath));
+                var root = doc.RootElement;
+
+                ToggleTheme(root.TryGetProperty("IsDarkMode", out var themeEl) && themeEl.GetBoolean());
+
+                if (root.TryGetProperty("StreamingMode", out var streamingEl))
+                    isStreamingMode = streamingEl.GetBoolean();
+
+                if (root.TryGetProperty("OriginalSpeed", out var origEl))
+                    originalSpeed = origEl.GetString() ?? string.Empty;
+
+                if (root.TryGetProperty("AutoStreamingEnabled", out var autoEl))
+                    isAutoStreamingEnabled = autoEl.GetBoolean();
+
+                AutoStreamingToggle.IsChecked = isAutoStreamingEnabled;
+            }
+            catch { ToggleTheme(false); }
+        }
+
+        private void SaveConfig(bool saveAdapter)
         {
             try
             {
                 string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
-                var configData = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
-                                 ?? new Dictionary<string, object>();
-                configData["IsDarkMode"] = isDarkMode;
+                var data = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
+                           ?? new Dictionary<string, object>();
+
+                data["IsDarkMode"] = isDarkMode;
+                if (saveAdapter && AdapterComboBox.SelectedItem is string adapter)
+                    data["NetworkAdapterName"] = adapter;
+
                 File.WriteAllText(configFilePath,
-                    JsonSerializer.Serialize(configData, new JsonSerializerOptions { WriteIndented = true }));
+                    JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
             }
             catch { }
         }
@@ -219,12 +341,12 @@ namespace StreamTweak
             try
             {
                 string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
-                var configData = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
-                                 ?? new Dictionary<string, object>();
-                configData["StreamingMode"] = streamingMode;
-                configData["OriginalSpeed"] = originalSpeedKey;
+                var data = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
+                           ?? new Dictionary<string, object>();
+                data["StreamingMode"] = streamingMode;
+                data["OriginalSpeed"] = originalSpeedKey;
                 File.WriteAllText(configFilePath,
-                    JsonSerializer.Serialize(configData, new JsonSerializerOptions { WriteIndented = true }));
+                    JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
             }
             catch { }
         }
@@ -234,96 +356,62 @@ namespace StreamTweak
             try
             {
                 string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
-                var configData = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
-                                 ?? new Dictionary<string, object>();
-                configData["AutoStreamingEnabled"] = isAutoStreamingEnabled;
+                var data = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
+                           ?? new Dictionary<string, object>();
+                data["AutoStreamingEnabled"] = isAutoStreamingEnabled;
                 File.WriteAllText(configFilePath,
-                    JsonSerializer.Serialize(configData, new JsonSerializerOptions { WriteIndented = true }));
+                    JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
             }
             catch { }
         }
 
-        private void LoadConfig()
-        {
-            try
-            {
-                if (File.Exists(configFilePath))
-                {
-                    string json = File.ReadAllText(configFilePath);
-                    using (JsonDocument doc = JsonDocument.Parse(json))
-                    {
-                        var root = doc.RootElement;
-
-                        if (root.TryGetProperty("IsDarkMode", out JsonElement themeElement))
-                            ToggleTheme(themeElement.GetBoolean());
-                        else
-                            ToggleTheme(false);
-
-                        if (root.TryGetProperty("NetworkAdapterName", out JsonElement adapterElement))
-                        {
-                            string savedAdapter = adapterElement.GetString() ?? string.Empty;
-                            if (!string.IsNullOrEmpty(savedAdapter) && AdapterComboBox.Items.Contains(savedAdapter))
-                                AdapterComboBox.SelectedItem = savedAdapter;
-                        }
-
-                        if (root.TryGetProperty("StreamingMode", out JsonElement streamingElement))
-                            isStreamingMode = streamingElement.GetBoolean();
-
-                        if (root.TryGetProperty("OriginalSpeed", out JsonElement originalSpeedElement))
-                            originalSpeed = originalSpeedElement.GetString() ?? string.Empty;
-
-                        if (root.TryGetProperty("AutoStreamingEnabled", out JsonElement autoStreamingElement))
-                            isAutoStreamingEnabled = autoStreamingElement.GetBoolean();
-                        else
-                            isAutoStreamingEnabled = true;
-
-                        AutoStreamingToggle.IsChecked = isAutoStreamingEnabled;
-                    }
-                }
-                else
-                {
-                    ToggleTheme(false);
-                    AutoStreamingToggle.IsChecked = true;
-                }
-            }
-            catch { ToggleTheme(false); }
-        }
+        // ─── Adapters ───────────────────────────────────────────────────────
 
         private void LoadNetworkAdapters()
         {
             AdapterComboBox.Items.Clear();
-            List<string> physicalAdapters = new List<string>();
+            List<string> physicalAdapters = new();
 
             try
             {
-                using CimSession session = CimSession.Create(null);
-                string query = "SELECT * FROM MSFT_NetAdapter WHERE ConnectorPresent = True AND Virtual = False";
-                var instances = session.QueryInstances(@"root\StandardCimv2", "WQL", query);
-
-                foreach (var instance in instances)
+                using var session = CimSession.Create(null);
+                var instances = session.QueryInstances(@"root\StandardCimv2", "WQL",
+                    "SELECT * FROM MSFT_NetAdapter WHERE ConnectorPresent = True AND Virtual = False");
+                foreach (var inst in instances)
                 {
-                    string adapterName = instance.CimInstanceProperties["Name"].Value?.ToString() ?? string.Empty;
-                    if (!string.IsNullOrEmpty(adapterName))
-                        physicalAdapters.Add(adapterName);
+                    string name = inst.CimInstanceProperties["Name"].Value?.ToString() ?? string.Empty;
+                    if (!string.IsNullOrEmpty(name)) physicalAdapters.Add(name);
                 }
             }
             catch
             {
                 physicalAdapters = NetworkInterface.GetAllNetworkInterfaces()
                     .Where(a => a.NetworkInterfaceType == NetworkInterfaceType.Ethernet)
-                    .Select(a => a.Name)
-                    .ToList();
+                    .Select(a => a.Name).ToList();
             }
 
             var activeAdapters = NetworkInterface.GetAllNetworkInterfaces()
                 .Where(a => physicalAdapters.Contains(a.Name) && a.OperationalStatus == OperationalStatus.Up)
-                .Select(a => a.Name)
-                .ToList();
+                .Select(a => a.Name).ToList();
 
-            foreach (var adapter in activeAdapters)
-                AdapterComboBox.Items.Add(adapter);
+            foreach (var a in activeAdapters) AdapterComboBox.Items.Add(a);
 
-            if (AdapterComboBox.Items.Count > 0)
+            // Restore saved adapter selection
+            string savedAdapter = string.Empty;
+            try
+            {
+                if (File.Exists(configFilePath))
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(configFilePath));
+                    if (doc.RootElement.TryGetProperty("NetworkAdapterName", out var el))
+                        savedAdapter = el.GetString() ?? string.Empty;
+                }
+            }
+            catch { }
+
+            if (!string.IsNullOrEmpty(savedAdapter) && AdapterComboBox.Items.Contains(savedAdapter))
+                AdapterComboBox.SelectedItem = savedAdapter;
+            else if (AdapterComboBox.Items.Count > 0)
                 AdapterComboBox.SelectedIndex = 0;
             else
             {
@@ -339,16 +427,13 @@ namespace StreamTweak
 
         private void AdapterComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (AdapterComboBox.SelectedItem != null)
+            string selected = AdapterComboBox.SelectedItem?.ToString() ?? string.Empty;
+            if (!string.IsNullOrEmpty(selected) && selected != "No active physical adapters found")
             {
-                string selectedAdapter = AdapterComboBox.SelectedItem.ToString() ?? string.Empty;
-                if (!string.IsNullOrEmpty(selectedAdapter) && selectedAdapter != "No active physical adapters found")
-                {
-                    currentAdapterName = selectedAdapter;
-                    LoadAdapterSpeeds(selectedAdapter);
-                    UpdateCurrentSpeedDisplay(selectedAdapter);
-                    UpdateStreamingButtonAppearance();
-                }
+                currentAdapterName = selected;
+                LoadAdapterSpeeds(selected);
+                UpdateCurrentSpeedDisplay(selected);
+                UpdateStreamingButtonAppearance();
             }
         }
 
@@ -358,18 +443,13 @@ namespace StreamTweak
             {
                 var adapter = NetworkInterface.GetAllNetworkInterfaces()
                     .FirstOrDefault(a => a.Name == adapterName && a.OperationalStatus == OperationalStatus.Up);
-
                 if (adapter != null)
                 {
-                    long speedMbps = adapter.Speed / 1_000_000;
-                    CurrentSpeedTextBlock.Text = speedMbps >= 1000
-                        ? $"{speedMbps / 1000.0} Gbps"
-                        : $"{speedMbps} Mbps";
+                    long mbps = adapter.Speed / 1_000_000;
+                    CurrentSpeedTextBlock.Text = mbps >= 1000 ? $"{mbps / 1000.0:0.##} Gbps" : $"{mbps} Mbps";
                 }
                 else
-                {
                     CurrentSpeedTextBlock.Text = "Disconnected";
-                }
             }
             catch { CurrentSpeedTextBlock.Text = "Unknown"; }
         }
@@ -383,31 +463,25 @@ namespace StreamTweak
 
             if (currentAdapterSpeeds != null && currentAdapterSpeeds.Count > 0)
             {
-                foreach (var speedKey in currentAdapterSpeeds.Keys)
-                    if (speedKey != null) SpeedComboBox.Items.Add(speedKey);
+                foreach (var key in currentAdapterSpeeds.Keys)
+                    if (key != null && !IsSpeedAtOrBelow100Mbps(key)) SpeedComboBox.Items.Add(key);
 
-                // Default selection: match the actual current link speed of the adapter,
-                // not a hardcoded preference — prevents originalSpeed from being set wrongly
+                // Select the item that matches the actual current link speed
+                var ni = NetworkInterface.GetAllNetworkInterfaces()
+                    .FirstOrDefault(n => n.Name.Equals(adapterName, StringComparison.OrdinalIgnoreCase));
+                long currentMbps = ni?.Speed / 1_000_000 ?? 0;
+
                 int selectedIndex = 0;
-                try
+                for (int i = 0; i < SpeedComboBox.Items.Count; i++)
                 {
-                    var ni = NetworkInterface.GetAllNetworkInterfaces()
-                        .FirstOrDefault(a => a.Name == adapterName && a.OperationalStatus == OperationalStatus.Up);
-                    if (ni != null)
-                    {
-                        long mbps = ni.Speed / 1_000_000;
-                        for (int i = 0; i < SpeedComboBox.Items.Count; i++)
-                        {
-                            string item = SpeedComboBox.Items[i]?.ToString()?.ToLower() ?? string.Empty;
-                            bool match = mbps >= 2000
-                                ? item.Contains("2.5") || item.Contains("2500")
-                                : item.Contains(mbps.ToString());
-                            if (match) { selectedIndex = i; break; }
-                        }
-                    }
+                    string item = SpeedComboBox.Items[i]?.ToString()?.ToLower() ?? string.Empty;
+                    bool match = currentMbps >= 2000
+                        ? item.Contains("2.5") || item.Contains("2500")
+                        : currentMbps >= 900 && currentMbps <= 1100
+                            ? (item.Contains("1") && item.Contains("gbps") && item.Contains("full"))
+                            : item.Contains(currentMbps.ToString());
+                    if (match) { selectedIndex = i; break; }
                 }
-                catch { }
-
                 SpeedComboBox.SelectedIndex = selectedIndex;
             }
             else
@@ -418,52 +492,86 @@ namespace StreamTweak
             }
         }
 
-        // Applies a speed change via SpeedChanger (UAC-free if service is running, UAC fallback otherwise)
+        // ─── Streaming Mode ─────────────────────────────────────────────────
+
+        private void UpdateStreamingButtonAppearance()
+        {
+            if (isStreamingMode)
+            {
+                StreamingModeButton.Content = "Stop Streaming Mode";
+                StreamingModeButton.Background = StreamingStopBrush;
+                StreamingModeButton.Foreground = new SolidColorBrush(Color.FromRgb(32, 32, 32));
+                StreamingModeButton.IsEnabled = true;
+                StreamingModeButton.Opacity = 1.0;
+            }
+            else
+            {
+                bool alreadyAt1G = IsCurrentSpeedAlready1G();
+                StreamingModeButton.Content = "Start Streaming Mode";
+                StreamingModeButton.IsEnabled = !alreadyAt1G;
+                StreamingModeButton.Opacity = alreadyAt1G ? 0.4 : 1.0;
+                StreamingModeButton.Background = alreadyAt1G ? StreamingDisabledBrush : StreamingStartBrush;
+                StreamingModeButton.Foreground = new SolidColorBrush(Color.FromRgb(32, 32, 32));
+            }
+        }
+
+        private static bool IsSpeedAtOrBelow100Mbps(string displayName)
+        {
+            var lower = displayName.ToLower();
+            if (lower.Contains("gbps")) return false;
+            int idx = lower.IndexOf("mbps");
+            if (idx > 0)
+            {
+                var parts = lower[..idx].Trim().Split(' ');
+                if (parts.Length > 0 && int.TryParse(parts[^1], out int mbps))
+                    return mbps <= 100;
+            }
+            return false;
+        }
+
+        private bool IsCurrentSpeedAlready1G()
+        {
+            string adapterName = AdapterComboBox.SelectedItem?.ToString() ?? string.Empty;
+            if (string.IsNullOrEmpty(adapterName)) return false;
+            var adapter = NetworkInterface.GetAllNetworkInterfaces()
+                .FirstOrDefault(a => a.Name == adapterName && a.OperationalStatus == OperationalStatus.Up);
+            if (adapter != null)
+            {
+                long mbps = adapter.Speed / 1_000_000;
+                return mbps >= 900 && mbps <= 1100;
+            }
+            return false;
+        }
+
         private void ApplySpeedInternal(string speedKey)
         {
-            if (currentAdapterSpeeds == null || !currentAdapterSpeeds.ContainsKey(speedKey)) return;
+            if (currentAdapterSpeeds == null || !currentAdapterSpeeds.TryGetValue(speedKey, out string? registryValue)) return;
 
             string selectedAdapter = AdapterComboBox.SelectedItem?.ToString() ?? string.Empty;
             if (string.IsNullOrEmpty(selectedAdapter)) return;
 
-            string registryValue = currentAdapterSpeeds[speedKey];
-            bool success;
+            bool ok = SpeedChanger.Apply(selectedAdapter, registryValue);
+            if (!ok) SpeedChanger.ApplyWithUac(selectedAdapter, registryValue);
 
-            if (SpeedChanger.IsTaskInstalled())
-                success = SpeedChanger.Apply(selectedAdapter, registryValue);
-            else
-                success = SpeedChanger.ApplyWithUac(selectedAdapter, registryValue);
-
-            if (success)
-            {
-                HasAppliedChanges = true;
-                SpeedApplied?.Invoke(this, EventArgs.Empty);
-            }
+            SpeedApplied?.Invoke(this, EventArgs.Empty);
         }
 
         private async Task RefreshSpeedAfterChange(string adapterName)
         {
             CurrentSpeedTextBlock.Text = "Negotiating...";
-
             for (int i = 0; i < 15; i++)
             {
                 await Task.Delay(1000);
-
                 var adapter = NetworkInterface.GetAllNetworkInterfaces()
                     .FirstOrDefault(a => a.Name == adapterName && a.OperationalStatus == OperationalStatus.Up);
-
                 if (adapter != null)
                 {
-                    long speedMbps = adapter.Speed / 1_000_000;
-                    CurrentSpeedTextBlock.Text = speedMbps >= 1000
-                        ? $"{speedMbps / 1000.0} Gbps"
-                        : $"{speedMbps} Mbps";
-
+                    long mbps = adapter.Speed / 1_000_000;
+                    CurrentSpeedTextBlock.Text = mbps >= 1000 ? $"{mbps / 1000.0} Gbps" : $"{mbps} Mbps";
                     UpdateStreamingButtonAppearance();
                     return;
                 }
             }
-
             CurrentSpeedTextBlock.Text = "Unknown";
             UpdateStreamingButtonAppearance();
         }
@@ -474,46 +582,25 @@ namespace StreamTweak
 
             if (!isStreamingMode)
             {
-                // Determine original speed from actual adapter speed — not from ComboBox selection.
-                // The ComboBox default may not match the real current speed, which would cause
-                // Stop Streaming Mode to attempt restoring the wrong speed.
-                string? detectedOriginalSpeed = null;
-                if (currentAdapterSpeeds != null)
-                {
-                    var ni = NetworkInterface.GetAllNetworkInterfaces()
-                        .FirstOrDefault(a => a.Name == selectedAdapter && a.OperationalStatus == OperationalStatus.Up);
-                    if (ni != null)
-                    {
-                        long mbps = ni.Speed / 1_000_000;
-                        foreach (var kvp in currentAdapterSpeeds)
-                        {
-                            string kl = kvp.Key.ToLower();
-                            bool match = mbps >= 2000
-                                ? kl.Contains("2.5") || kl.Contains("2500")
-                                : kl.Contains(mbps.ToString());
-                            if (match) { detectedOriginalSpeed = kvp.Key; break; }
-                        }
-                    }
-                }
-                originalSpeed = detectedOriginalSpeed ?? SpeedComboBox.SelectedItem?.ToString() ?? string.Empty;
+                if (SpeedComboBox.SelectedItem != null)
+                    originalSpeed = SpeedComboBox.SelectedItem.ToString() ?? string.Empty;
 
                 string? oneGbpsKey = null;
                 if (currentAdapterSpeeds != null)
                 {
                     foreach (var kvp in currentAdapterSpeeds)
                     {
-                        string keyLower = kvp.Key.ToLower();
-                        bool nameMatch = (keyLower.Contains("1 gbps") || keyLower.Contains("1gbps") ||
-                                          keyLower.Contains("1000")) && keyLower.Contains("full");
-                        bool valueMatch = kvp.Value == "6";
-                        if (nameMatch || valueMatch) { oneGbpsKey = kvp.Key; break; }
+                        string kl = kvp.Key.ToLower();
+                        if (((kl.Contains("1 gbps") || kl.Contains("1gbps") || kl.Contains("1000"))
+                             && kl.Contains("full")) || kvp.Value == "6")
+                        { oneGbpsKey = kvp.Key; break; }
                     }
                 }
 
                 if (oneGbpsKey == null)
                 {
-                    MessageBox.Show("1 Gbps Full Duplex not found for this adapter.", "Streaming Mode",
-                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("1 Gbps Full Duplex not found for this adapter.",
+                        "Streaming Mode", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
@@ -521,11 +608,14 @@ namespace StreamTweak
                 isStreamingMode = true;
                 UpdateStreamingButtonAppearance();
                 SaveStreamingStateToConfig(true, originalSpeed);
+                SessionLogger.StartSession("Manual", originalSpeed);
                 StreamingModeChanged?.Invoke(this, EventArgs.Empty);
                 ApplySpeedInternal(oneGbpsKey);
 
                 if (!string.IsNullOrEmpty(selectedAdapter))
                     await RefreshSpeedAfterChange(selectedAdapter);
+
+                RefreshSessionHistory();
             }
             else
             {
@@ -535,6 +625,7 @@ namespace StreamTweak
                     ApplySpeedInternal(originalSpeed);
                 }
 
+                SessionLogger.EndSession();
                 isStreamingMode = false;
                 UpdateStreamingButtonAppearance();
                 SaveStreamingStateToConfig(false, string.Empty);
@@ -542,6 +633,8 @@ namespace StreamTweak
 
                 if (!string.IsNullOrEmpty(selectedAdapter))
                     await RefreshSpeedAfterChange(selectedAdapter);
+
+                RefreshSessionHistory();
             }
         }
 
@@ -560,18 +653,7 @@ namespace StreamTweak
             if (string.IsNullOrEmpty(selectedAdapter) || string.IsNullOrEmpty(selectedSpeedKey) ||
                 selectedAdapter == "No active physical adapters found") return;
 
-            try
-            {
-                string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
-                var configData = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
-                                 ?? new Dictionary<string, object>();
-                configData["NetworkAdapterName"] = selectedAdapter;
-                configData["IsDarkMode"] = isDarkMode;
-                File.WriteAllText(configFilePath,
-                    JsonSerializer.Serialize(configData, new JsonSerializerOptions { WriteIndented = true }));
-            }
-            catch { }
-
+            SaveConfig(saveAdapter: true);
             ApplySpeedInternal(selectedSpeedKey);
             await RefreshSpeedAfterChange(selectedAdapter);
         }

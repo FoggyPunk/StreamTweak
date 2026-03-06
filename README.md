@@ -5,25 +5,20 @@
 
 **StreamTweak** is born to solve technical bottlenecks between Host and Client, offering an intelligent control center to manage your remote gaming PC with a single click.
 
+## ✅ Compatibility
+StreamTweak works seamlessly with [Moonlight](https://github.com/moonlight-stream/moonlight-qt), [Sunshine](https://github.com/LizardByte/Sunshine), [Apollo](https://github.com/ClassicOldSong/Apollo), [Vibeshine](https://github.com/Nonary/vibeshine), and [Vibepollo](https://github.com/Nonary/Vibepollo).
+
 > ⚠️ **Browser Warning:** When downloading the installer, Edge or Chrome may show a security warning. This is a **false positive** caused by the lack of a paid code-signing certificate — common for open-source projects. Click **"Keep"** or **"Keep anyway"** to proceed. The source code is fully available here for inspection.
 
-## ✨ What's New in Version 2.5.2 — The "Vibe Update"
-Native support for **Vibepollo** and **Vibeshine** — the most popular Sunshine/Apollo forks — is now fully integrated into Auto Streaming Mode.
+## ✨ What's New in Version 3.0.0 — The "Awareness Update"
 
-- **Vibepollo and Vibeshine supported:** Auto Streaming Mode now detects Moonlight connections via their log files, including the dynamic rotating format (`sunshine-YYYYMMDD-HHMMSS-mmm.log`)
-- **Dynamic installation discovery:** StreamTweak automatically finds your streaming server regardless of where it's installed. The Windows registry is checked first; if that fails, Program Files is scanned as fallback. Custom installation paths work out of the box — no configuration needed
-- **Periodic rediscovery:** StreamingLogMonitor re-runs full log discovery every 10 seconds, catching dynamic log files that appear after StreamTweak has already started
-- **Broad compatibility:** Any current or future Sunshine-based fork is automatically supported as long as it follows the standard `config\logs\` or `config\sunshine.log` structure
-
-## ✨ What's New in Version 2.5.1
-- **Truly UAC-free experience:** A background Windows Service (`StreamTweakService`) handles all network speed changes silently — no UAC prompts during Manual Mode, Auto Mode, or tray menu operations
-- **Clean privilege separation:** The UI process stays unprivileged; only the service touches the network adapter settings
-- **Graceful fallback:** Without the installer, the app falls back to the standard UAC prompt automatically
-
-## ✨ What's New in Version 2.5.0
-- **Auto Streaming Mode:** StreamTweak monitors Sunshine/Apollo logs and automatically adjusts network speed when Moonlight connects
-- **Redesigned Settings UI:** Professional modern layout with Windows 11-style toggle switch
-- **Intelligent Alert System:** 4-second awareness delay before network changes, auto-dismissal after 8 seconds
+- **Logs tab:** browse the last 10 speed-change sessions at a glance — trigger mode (Auto/Manual), duration, and original speed are all recorded automatically
+- **Streaming app detection:** the Logs tab shows whether StreamTweak has correctly located the log folder of your streaming server (Sunshine, Apollo, Vibeshine or Vibepollo); click the path to open the folder directly in Explorer
+- **About tab:** version info, link to the GitHub repository, GPL v3 license badge, and PayPal donation button in one dedicated panel
+- **Tray Auto Mode toggle:** enable or disable Auto Streaming Mode directly from the system tray right-click menu — no need to open Settings
+- **Tray speed readout:** the current link speed of the selected adapter is always visible in the tray context menu
+- **Tray streaming status:** the context menu now shows whether a streaming session is currently active or inactive
+- **Full UI revision:** centered layout across all panels, redesigned tab bar with Dark/Light Mode button integrated, improved spacing and visual balance throughout
 
 ## 📖 The Technical Story Behind This Project
 This project was born out of a specific frustration in the cloud gaming community. When using game streaming software like **[Moonlight](https://github.com/moonlight-stream/moonlight-qt)** with **Sunshine** or **Apollo**, a known issue occurs if the host PC and the client have mismatched Ethernet link speeds.
@@ -36,11 +31,15 @@ StreamTweak makes the workaround (throttling the Host PC's Ethernet adapter down
 
 ## 🔥 Key Features
 - **Settings Dashboard:** Sleek UI to manage physical adapters and speeds.
+- **Logs Tab:** Session history for the last 10 speed changes — trigger mode, duration, and original speed recorded automatically.
+- **Streaming App Detection:** StreamTweak locates the log folder of the active streaming server and lets you open it in Explorer with one click.
+- **About Tab:** Version info, GitHub link, license badge, and donation button in a dedicated panel.
 - **Smart Filtering:** Only shows real LAN adapters (no VPNs, Wi-Fi, or virtual adapters).
 - **Driver Bypass:** Automatically detects and bypasses Realtek/Intel driver localization limitations.
 - **Auto Streaming Mode:** Intelligently monitors Sunshine, Apollo, Vibeshine and Vibepollo logs for incoming Moonlight connections and auto-adjusts network speed. Works with any installation path.
 - **Manual Streaming Control:** One-click activation to instantly throttle to 1Gbps with professional UI feedback.
 - **Smart Notifications:** Non-intrusive on-screen alerts inform users before network changes occur.
+- **Tray Control:** Right-click the tray icon to toggle Auto Mode, check current link speed, and monitor streaming session status — all without opening Settings.
 - **Completely UAC-free:** A background Windows Service handles all privileged operations silently — no prompts during normal use.
 - **Auto-Start:** Launches at Windows logon via a hidden Scheduled Task.
 
@@ -65,6 +64,21 @@ StreamTweak automatically locates the streaming server log file at startup and r
                                →  config\sunshine.log (static)
 ```
 
+### Session Logging (v3.0.0+)
+Every speed-change event — whether triggered automatically or manually — is recorded as a `SessionEntry` and persisted to `%LOCALAPPDATA%\StreamTweak\sessions.json`. The Logs tab reads this file and displays the last 10 sessions in real time.
+
+```
+SessionEntry {
+  Id             →  short unique identifier
+  StartTime      →  when the session began
+  EndTime        →  when the original speed was restored (null if active)
+  TriggerMode    →  "Auto" | "Manual"
+  OriginalSpeed  →  the speed key that will be restored on session end
+}
+```
+
+The same discovery pipeline used for log monitoring (`LogParser.FindStreamingAppInfo`) is surfaced in the Logs tab, so the user can verify at a glance which streaming server StreamTweak has detected and navigate directly to its log folder.
+
 ## 🎮 How It Works
 
 ### Auto Streaming Mode
@@ -88,13 +102,22 @@ StreamTweak automatically locates the streaming server log file at startup and r
 
 ## 📝 Installation
 1. Go to the **Releases** page of this repository.
-2. Download the latest `StreamTweak_2.5.2_Installer.exe`
+2. Download the latest `StreamTweak_3.0.0_Installer.exe`
 3. Run the installer and enjoy seamless streaming.
 
 ## 🙏 Support the Project
 If this tool helped you fix your Moonlight stutters or made managing your PC easier, consider buying me a coffee! ☕
 
 [![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/foggypunk)
+
+## 🤝 Acknowledgements
+StreamTweak exists thanks to the outstanding work of the developers behind the tools it integrates with. A heartfelt thank you to:
+
+- [**Moonlight**](https://github.com/moonlight-stream/moonlight-qt) — the open-source game streaming client that inspired this project and the community around it
+- [**Sunshine**](https://github.com/LizardByte/Sunshine) — the game streaming host that started it all
+- [**Apollo**](https://github.com/ClassicOldSong/Apollo) — the community-driven Sunshine fork
+- [**Vibeshine**](https://github.com/Nonary/vibeshine) — the Sunshine fork with dynamic log support that drove the v2.5.2 compatibility work
+- [**Vibepollo**](https://github.com/Nonary/Vibepollo) — the Apollo fork, also fully supported since v2.5.2
 
 ## License
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-green.svg)](https://www.gnu.org/licenses/gpl-3.0)

@@ -274,5 +274,62 @@ namespace StreamTweak
             }
             catch { }
         }
+
+        // ─── Streaming App Detection ─────────────────────────────────────────
+
+        public static StreamingAppInfo? FindStreamingAppInfo()
+        {
+            foreach (string appName in KnownAppNames)
+            {
+                string? installDir = GetInstallDirFromRegistry(appName);
+                if (!string.IsNullOrEmpty(installDir))
+                    return BuildStreamingAppInfo(appName, installDir);
+            }
+
+            var searchRoots = new List<string>();
+            string pf    = Environment.GetEnvironmentVariable("ProgramFiles")       ?? @"C:\Program Files";
+            string pfx86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)") ?? @"C:\Program Files (x86)";
+            if (Directory.Exists(pf))              searchRoots.Add(pf);
+            if (Directory.Exists(pfx86) && pfx86 != pf) searchRoots.Add(pfx86);
+
+            foreach (string root in searchRoots)
+                foreach (string appName in KnownAppNames)
+                {
+                    string candidate = Path.Combine(root, appName);
+                    if (Directory.Exists(candidate))
+                        return BuildStreamingAppInfo(appName, candidate);
+                }
+
+            return null;
+        }
+
+        private static StreamingAppInfo BuildStreamingAppInfo(string appName, string installDir)
+        {
+            var info = new StreamingAppInfo { AppName = appName };
+
+            try
+            {
+                var exes = Directory.GetFiles(installDir, "*.exe", SearchOption.TopDirectoryOnly);
+                info.ExePath = exes.FirstOrDefault(f =>
+                    Path.GetFileNameWithoutExtension(f).Contains(appName, StringComparison.OrdinalIgnoreCase))
+                    ?? exes.FirstOrDefault();
+            }
+            catch { }
+
+            string configDir = Path.Combine(installDir, "config");
+            string logsDir   = Path.Combine(configDir, "logs");
+            if      (Directory.Exists(logsDir))   info.LogFolderPath = logsDir;
+            else if (Directory.Exists(configDir)) info.LogFolderPath = configDir;
+            else                                  info.LogFolderPath = installDir;
+
+            return info;
+        }
+    }
+
+    public class StreamingAppInfo
+    {
+        public string  AppName       { get; set; } = string.Empty;
+        public string? ExePath        { get; set; }
+        public string? LogFolderPath  { get; set; }
     }
 }
