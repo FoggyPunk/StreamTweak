@@ -42,6 +42,10 @@ namespace StreamTweak
         private static readonly SolidColorBrush StreamingDisabledBrush = new(Color.FromRgb(180, 180, 180));
         private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(10) };
 
+        private List<MonitorInfo> _currentMonitors = new();
+        private bool _hdrToggleBusy = false;
+        private bool _autoHdrBusy = false;
+
         public SettingsWindow()
         {
             InitializeComponent();
@@ -56,7 +60,12 @@ namespace StreamTweak
             Directory.CreateDirectory(appFolder);
             configFilePath = Path.Combine(appFolder, "config.json");
 
-            this.SourceInitialized += (_, _) => UpdateTitleBarTheme();
+            this.SourceInitialized += (_, _) =>
+            {
+                UpdateTitleBarTheme();
+                var hwndSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+                hwndSource?.AddHook(WndProc);
+            };
 
             ApplySystemAccentColor();
             LoadConfig();
@@ -140,10 +149,12 @@ namespace StreamTweak
         private void NetworkTabButton_Click(object sender, RoutedEventArgs e)
         {
             NetworkPanel.Visibility  = Visibility.Visible;
+            DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Collapsed;
             NetworkTabButton.Style   = (Style)this.Resources["TabButtonActive"];
+            DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
@@ -152,10 +163,12 @@ namespace StreamTweak
         private void AudioTabButton_Click(object sender, RoutedEventArgs e)
         {
             NetworkPanel.Visibility  = Visibility.Collapsed;
+            DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Visible;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Collapsed;
             NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
+            DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButtonActive"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
@@ -165,10 +178,12 @@ namespace StreamTweak
         private void LogsTabButton_Click(object sender, RoutedEventArgs e)
         {
             NetworkPanel.Visibility  = Visibility.Collapsed;
+            DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Visible;
             AboutPanel.Visibility    = Visibility.Collapsed;
             NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
+            DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButtonActive"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
@@ -178,10 +193,12 @@ namespace StreamTweak
         private void AboutTabButton_Click(object sender, RoutedEventArgs e)
         {
             NetworkPanel.Visibility  = Visibility.Collapsed;
+            DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Visible;
             NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
+            DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButtonActive"];
@@ -833,6 +850,321 @@ namespace StreamTweak
                 DolbyAccessIcon.Foreground = new SolidColorBrush(Color.FromRgb(220, 70, 50));
                 DolbyAccessText.Text = "Dolby Atmos for Headphones: not found";
             }
+        }
+        public void RefreshDisplayPanelIfVisible()
+        {
+            if (DisplayPanel.Visibility == Visibility.Visible)
+                RefreshDisplayPanelAsync();
+        }
+
+        private void DisplayTabButton_Click(object sender, RoutedEventArgs e)
+        {
+            NetworkPanel.Visibility = Visibility.Collapsed;
+            AudioPanel.Visibility = Visibility.Collapsed;
+            DisplayPanel.Visibility = Visibility.Visible;
+            LogsPanel.Visibility = Visibility.Collapsed;
+            AboutPanel.Visibility = Visibility.Collapsed;
+
+            NetworkTabButton.Style = (Style)this.Resources["TabButton"];
+            AudioTabButton.Style = (Style)this.Resources["TabButton"];
+            DisplayTabButton.Style = (Style)this.Resources["TabButtonActive"];
+            LogsTabButton.Style = (Style)this.Resources["TabButton"];
+            AboutTabButton.Style = (Style)this.Resources["TabButton"];
+
+            RefreshDisplayPanelAsync();
+        }
+
+        // ─── Refresh — called on tab open and after every toggle ─────────────────────
+
+        private async void RefreshDisplayPanelAsync()
+        {
+            DisplayLoadingText.Visibility = Visibility.Visible;
+            MonitorStackPanel.Visibility = Visibility.Collapsed;
+            AutoHdrSection.Visibility = Visibility.Collapsed;
+            DisplayContextLabel.Visibility = Visibility.Collapsed;
+
+            try
+            {
+                _currentMonitors = await HdrService.GetMonitorsAsync();
+                bool autoHdr = await HdrService.GetAutoHdrAsync();
+
+                // Determine context: Apollo/Vibepollo → prefer virtual display
+                var appInfo = LogParser.FindStreamingAppInfo();
+                bool apolloMode = appInfo != null &&
+                    (appInfo.AppName.IndexOf("Apollo", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     appInfo.AppName.IndexOf("Vibepollo", StringComparison.OrdinalIgnoreCase) >= 0);
+
+                List<MonitorInfo> toShow;
+
+                if (apolloMode)
+                {
+                    // Try to find virtual display(s)
+                    var virtuals = _currentMonitors.FindAll(m => m.IsVirtual);
+                    if (virtuals.Count > 0)
+                    {
+                        toShow = virtuals;
+                        DisplayContextIcon.Source = ExtractExeIcon(appInfo!.ExePath);
+                        DisplayContextText.Text = $"Showing virtual display  ·  {appInfo!.AppName}";
+                        DisplayContextLabel.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        // Virtual display not (yet) connected — show all
+                        toShow = _currentMonitors;
+                        DisplayContextIcon.Source = ExtractExeIcon(appInfo!.ExePath);
+                        DisplayContextText.Text = $"{appInfo!.AppName} detected — connect Moonlight to see virtual display";
+                        DisplayContextLabel.Visibility = Visibility.Visible;
+                    }
+                }
+                else
+                {
+                    toShow = _currentMonitors;
+                    if (appInfo != null)
+                    {
+                        DisplayContextIcon.Source = ExtractExeIcon(appInfo.ExePath);
+                        DisplayContextText.Text = $"Physical display  ·  {appInfo.AppName}";
+                        DisplayContextLabel.Visibility = Visibility.Visible;
+                    }
+                }
+
+                BuildMonitorCards(toShow);
+
+                // AutoHDR toggle
+                _autoHdrBusy = true;
+                AutoHdrToggle.IsChecked = autoHdr;
+                _autoHdrBusy = false;
+
+                bool anyHdrOn = _currentMonitors.Exists(m => m.HdrEnabled);
+                AutoHdrWarning.Visibility = (autoHdr && !anyHdrOn)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+
+                DisplayLoadingText.Visibility = Visibility.Collapsed;
+                MonitorStackPanel.Visibility = Visibility.Visible;
+                AutoHdrSection.Visibility = Visibility.Visible;
+            }
+            catch (Exception ex)
+            {
+                DisplayLoadingText.Text = $"Error reading display info: {ex.Message}";
+                DisplayLoadingText.Visibility = Visibility.Visible;
+            }
+        }
+
+        // ─── Build monitor cards dynamically ─────────────────────────────────────────
+
+        private void BuildMonitorCards(List<MonitorInfo> monitors)
+        {
+            MonitorStackPanel.Children.Clear();
+
+            if (monitors.Count == 0)
+            {
+                var empty = new TextBlock
+                {
+                    Text = "No active displays found.",
+                    FontSize = 12,
+                    Opacity = 0.6,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 8, 0, 8),
+                };
+                empty.SetResourceReference(TextBlock.ForegroundProperty, "TextForeground");
+                MonitorStackPanel.Children.Add(empty);
+                return;
+            }
+
+            foreach (var m in monitors)
+            {
+                // ── outer card border ──
+                var card = new Border
+                {
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Padding = new Thickness(12, 10, 12, 10),
+                    CornerRadius = new CornerRadius(6),
+                    BorderThickness = new Thickness(1),
+                };
+                card.SetResourceReference(Border.BackgroundProperty, "WindowBackground");
+                card.SetResourceReference(Border.BorderBrushProperty, "BorderColor");
+
+                var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                // ── left: name + info ──
+                var leftStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+
+                var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
+                var nameText = new TextBlock
+                {
+                    Text = m.FriendlyName,
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                };
+                nameText.SetResourceReference(TextBlock.ForegroundProperty, "TextForeground");
+                nameRow.Children.Add(nameText);
+
+                if (m.IsVirtual)
+                {
+                    var chip = new Border
+                    {
+                        Margin = new Thickness(8, 0, 0, 0),
+                        Padding = new Thickness(5, 1, 5, 1),
+                        CornerRadius = new CornerRadius(4),
+                        VerticalAlignment = VerticalAlignment.Center,
+                    };
+                    chip.SetResourceReference(Border.BackgroundProperty, "AccentColor");
+                    chip.Child = new TextBlock
+                    {
+                        Text = "Virtual",
+                        FontSize = 9,
+                        FontWeight = FontWeights.SemiBold,
+                        Foreground = System.Windows.Media.Brushes.White,
+                    };
+                    nameRow.Children.Add(chip);
+                }
+
+                leftStack.Children.Add(nameRow);
+
+                string resText = (m.Width > 0 && m.Height > 0)
+                    ? $"{m.Width} × {m.Height}   {m.RefreshRateHz} Hz"
+                    : "Resolution unknown";
+
+                var infoText = new TextBlock
+                {
+                    Text = resText,
+                    FontSize = 11,
+                    Opacity = 0.65,
+                    Margin = new Thickness(0, 3, 0, 0),
+                };
+                infoText.SetResourceReference(TextBlock.ForegroundProperty, "TextForeground");
+                leftStack.Children.Add(infoText);
+
+                // HDR supported/not label
+                string hdrLabel = m.HdrSupported
+                    ? (m.HdrEnabled ? "HDR  ON" : "HDR  OFF")
+                    : "HDR not supported";
+
+                var hdrStateText = new TextBlock
+                {
+                    Text = hdrLabel,
+                    FontSize = 11,
+                    Opacity = 0.65,
+                    Margin = new Thickness(0, 2, 0, 0),
+                };
+                hdrStateText.SetResourceReference(TextBlock.ForegroundProperty, "TextForeground");
+                if (m.HdrEnabled)
+                {
+                    hdrStateText.Foreground = new SolidColorBrush(Color.FromRgb(76, 175, 80));
+                    hdrStateText.Opacity = 1.0;
+                }
+                leftStack.Children.Add(hdrStateText);
+
+                Grid.SetColumn(leftStack, 0);
+                grid.Children.Add(leftStack);
+
+                // ── right: HDR toggle ──
+                var toggle = new CheckBox
+                {
+                    Style = (Style)this.Resources["ToggleSwitchStyle"],
+                    IsChecked = m.HdrEnabled,
+                    IsEnabled = m.HdrSupported,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Tag = m,           // carry MonitorInfo
+                };
+                toggle.Checked += HdrToggle_Changed;
+                toggle.Unchecked += HdrToggle_Changed;
+
+                Grid.SetColumn(toggle, 1);
+                grid.Children.Add(toggle);
+
+                card.Child = grid;
+                MonitorStackPanel.Children.Add(card);
+            }
+        }
+
+        // ─── HDR toggle handler ───────────────────────────────────────────────────────
+
+        private async void HdrToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_hdrToggleBusy) return;
+            if (sender is not CheckBox cb || cb.Tag is not MonitorInfo m) return;
+
+            bool enable = cb.IsChecked ?? false;
+            cb.IsEnabled = false;
+
+            try
+            {
+                await HdrService.SetHdrAsync(m.AdapterId, m.TargetId, enable);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(
+                    $"Could not change HDR state:\n{ex.Message}",
+                    "StreamTweak — HDR",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Warning);
+
+                _hdrToggleBusy = true;
+                cb.IsChecked = !enable;
+                _hdrToggleBusy = false;
+                cb.IsEnabled = true;
+                return;
+            }
+
+            // Immediately update the in-memory model — do not wait for Windows
+            m.HdrEnabled = enable;
+            BuildMonitorCards(_currentMonitors);
+
+            // Update the Auto HDR warning
+            bool anyHdrOn = _currentMonitors.Exists(x => x.HdrEnabled);
+            bool autoHdrOn = AutoHdrToggle.IsChecked ?? false;
+            AutoHdrWarning.Visibility = (autoHdrOn && !anyHdrOn)
+                ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        // ─── AutoHDR toggle handler ───────────────────────────────────────────────────
+
+        private async void AutoHdrToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_autoHdrBusy) return;
+
+            bool enable = AutoHdrToggle.IsChecked ?? false;
+
+            try
+            {
+                await HdrService.SetAutoHdrAsync(enable);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(
+                    $"Could not change Auto HDR state:\n{ex.Message}",
+                    "StreamTweak — Auto HDR",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Warning);
+
+                _hdrToggleBusy = true;
+                AutoHdrToggle.IsChecked = !enable;
+                _hdrToggleBusy = false;
+                return;
+            }
+
+            bool anyHdrOn = _currentMonitors.Exists(m => m.HdrEnabled);
+            AutoHdrWarning.Visibility = (enable && !anyHdrOn)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        // ─── Refresh button ───────────────────────────────────────────────────────────
+
+        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            const int WM_DISPLAYCHANGE = 0x007E;
+            if (msg == WM_DISPLAYCHANGE && DisplayPanel.Visibility == Visibility.Visible)
+                RefreshDisplayPanelAsync();
+            return IntPtr.Zero;
+        }
+
+        private void DisplayRefreshButton_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshDisplayPanelAsync();
         }
     }
 }

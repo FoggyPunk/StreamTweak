@@ -33,6 +33,11 @@ namespace StreamTweak
         private readonly DolbyAudioMonitor _dolbyMonitor = new();
         private bool isAudioMonitorEnabled = false;
 
+        // HDR tray state
+        private bool _trayHdrEnabled = false;
+        private bool _trayAutoHdrEnabled = false;
+        private MonitorInfo? _primaryMonitor = null;
+
         // Inactivity timer — prevents restoring speed on temporary reconnect disconnects
         private System.Windows.Threading.DispatcherTimer? inactivityTimer = null;
         private const int INACTIVITY_TIMEOUT_MS = 30000;
@@ -60,6 +65,7 @@ namespace StreamTweak
             StartAutoStreamingMonitor();
             _dolbyMonitor.StatusChanged += OnDolbyStatusChanged;
             StartDolbyMonitor();
+            _ = InitHdrStateAsync();
         }
 
         private void LoadConfig()
@@ -200,6 +206,19 @@ namespace StreamTweak
                     ? "Dolby Atmos: Enabled"
                     : "Dolby Atmos: Disabled";
             }
+
+            if (HdrModeMenuItem != null)
+            {
+                HdrModeMenuItem.IsEnabled = _primaryMonitor?.HdrSupported ?? false;
+                HdrModeMenuItem.IsChecked = _trayHdrEnabled;
+                HdrModeMenuItem.Header = _trayHdrEnabled ? "HDR: On" : "HDR: Off";
+            }
+
+            if (AutoHdrModeMenuItem != null)
+            {
+                AutoHdrModeMenuItem.IsChecked = _trayAutoHdrEnabled;
+                AutoHdrModeMenuItem.Header = _trayAutoHdrEnabled ? "Auto HDR: On" : "Auto HDR: Off";
+            }
         }
 
         private MenuItem? SpeedStatusMenuItem =>
@@ -212,6 +231,10 @@ namespace StreamTweak
             GetMenuItem("AutoModeMenuItem");
         private MenuItem? DolbyModeMenuItem =>
             GetMenuItem("DolbyModeMenuItem");
+        private MenuItem? HdrModeMenuItem =>
+            GetMenuItem("HdrModeMenuItem");
+        private MenuItem? AutoHdrModeMenuItem =>
+            GetMenuItem("AutoHdrModeMenuItem");
 
         private MenuItem? GetMenuItem(string name) =>
             tb?.ContextMenu?.Items.OfType<MenuItem>()
@@ -346,6 +369,48 @@ namespace StreamTweak
             settingsWindow?.SyncAudioMonitorState(isAudioMonitorEnabled);
             settingsWindow?.SyncDolbyMonitorStatus(
                 _dolbyMonitor.IsEnabled ? "Ready — waiting for next stream…" : "Disabled.");
+        }
+
+        private async Task InitHdrStateAsync()
+        {
+            try
+            {
+                var monitors = await HdrService.GetMonitorsAsync();
+                _primaryMonitor = monitors.FirstOrDefault(m => !m.IsVirtual && m.HdrSupported)
+                                  ?? monitors.FirstOrDefault(m => !m.IsVirtual);
+                _trayHdrEnabled = _primaryMonitor?.HdrEnabled ?? false;
+                _trayAutoHdrEnabled = await HdrService.GetAutoHdrAsync();
+                UpdateTrayMenu();
+            }
+            catch { }
+        }
+
+        private async void MenuHdrMode_Click(object sender, RoutedEventArgs e)
+        {
+            if (_primaryMonitor == null) return;
+            bool enable = !_trayHdrEnabled;
+            try
+            {
+                await HdrService.SetHdrAsync(_primaryMonitor.AdapterId, _primaryMonitor.TargetId, enable);
+                _primaryMonitor.HdrEnabled = enable;
+                _trayHdrEnabled = enable;
+                UpdateTrayMenu();
+                settingsWindow?.RefreshDisplayPanelIfVisible();
+            }
+            catch { }
+        }
+
+        private async void MenuAutoHdrMode_Click(object sender, RoutedEventArgs e)
+        {
+            bool enable = !_trayAutoHdrEnabled;
+            try
+            {
+                await HdrService.SetAutoHdrAsync(enable);
+                _trayAutoHdrEnabled = enable;
+                UpdateTrayMenu();
+                settingsWindow?.RefreshDisplayPanelIfVisible();
+            }
+            catch { }
         }
 
         private void SaveAudioMonitorToConfig(bool enabled)

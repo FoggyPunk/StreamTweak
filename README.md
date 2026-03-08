@@ -21,6 +21,11 @@ StreamTweak works seamlessly with [Moonlight](https://github.com/moonlight-strea
 - **Completely UAC-free:** A background Windows Service handles all privileged operations silently — no prompts during normal use.
 - **Auto-Start:** Launches at Windows logon via a hidden Scheduled Task.
 
+### 🖥️ Display & HDR
+- **HDR monitor control:** the Display tab lists all active monitors with resolution, refresh rate, and HDR state — toggle HDR on or off without opening Windows Settings. Works on Windows 10 and all Windows 11 versions including 24H2.
+- **Auto HDR toggle:** enable or disable Windows Auto HDR for supported SDR games directly from StreamTweak; the change takes effect immediately.
+- **Virtual display awareness:** when Apollo or Vibepollo is detected, the Display tab automatically focuses on the virtual display used for remote streaming.
+
 ### 🎧 Audio Enhancements
 - **Auto Dolby Atmos for Headphones:** Automatically enables Dolby Atmos for Headphones on Steam Streaming Speakers 30 seconds after a streaming session starts — requires Dolby Access on the host PC.
 - **Dolby Access detection:** The Audio tab shows a live indicator (via Windows Spatial Audio API) confirming whether the Dolby Atmos format is available on the system.
@@ -34,12 +39,21 @@ StreamTweak works seamlessly with [Moonlight](https://github.com/moonlight-strea
 - **Logs Tab:** Session history for the last 10 speed changes — trigger mode, duration, and original speed recorded automatically.
 - **About Tab:** Version info, GitHub link, license badge, and donation button in a dedicated panel.
 
-## ✨ What's New in Version 3.1.1 — The "Session Integrity Update"
+## ✨ What's New in Version 3.2.0 — The "Display Update"
+
+- **HDR monitor control:** toggle HDR on or off on any active display directly from the new Display tab — no need to open Windows Settings. Compatible with Windows 10 and all Windows 11 versions including 24H2
+- **Auto HDR toggle:** enable or disable Windows Auto HDR for supported SDR games instantly from the app
+- **Virtual display awareness:** when Apollo or Vibepollo is detected, the Display tab focuses automatically on the virtual display used for the streaming session
+
+<details>
+<summary>Previous highlights — Version 3.1.1 — The "Session Integrity Update"</summary>
 
 - **Session reliability:** fixed sessions remaining stuck as "Active" indefinitely after a restart or crash — orphaned entries are automatically sealed at startup
 - **End reason tracking:** each session now records how it ended — *User* (clean stop), *Disconnected* (connection lost, no reconnect within 30 s), or *Interrupted* (app closed mid-session)
 - **Duration indicators:** ⚡ marks sessions that ended due to a lost connection; — replaces "Active" for sessions interrupted by a restart
 - **Clear Session History:** new button in the Logs tab to wipe the session list in one click; any active session is preserved
+
+</details>
 
 <details>
 <summary>Previous highlights — Version 3.1.0 — The "Atmos Update"</summary>

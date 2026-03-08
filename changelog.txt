@@ -4,6 +4,24 @@ StreamTweak - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamTweak
 
+Version 3.2.0 - The "Display Update" (08/03/2026)
+------------------------------------------
+✨ NEW FEATURES:
+• Display tab — HDR monitor control: the new Display tab shows all active
+  monitors with resolution, refresh rate, and current HDR state; HDR can
+  be toggled on or off directly from StreamTweak without opening Windows
+  Settings, with full compatibility across Windows 10 and Windows 11
+  (including 24H2 and later)
+• Display tab — Auto HDR toggle: enables or disables Windows Auto HDR for
+  supported SDR games directly from the app; the change is applied
+  immediately via registry and broadcast to all running applications
+• Display tab — virtual display awareness: when Apollo or Vibepollo is
+  detected, the Display tab automatically highlights the virtual display
+  (SudoVDA / IDD) used for remote streaming, keeping the view focused on
+  what matters during a session
+• Tray right-click — HDR toggles: HDR and Auto HDR can also be toggled
+  directly from the system tray context menu, in sync with the Display tab
+
 Version 3.1.1 - The "Session Integrity Update" (08/03/2026)
 ------------------------------------------
 ✨ NEW FEATURES:

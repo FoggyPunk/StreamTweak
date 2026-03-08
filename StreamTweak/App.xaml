@@ -18,6 +18,10 @@
                               IsCheckable="True" IsChecked="True" Click="MenuAutoMode_Click"/>
                     <MenuItem x:Name="DolbyModeMenuItem"     Header="Dolby Atmos: Disabled"
                               IsCheckable="True" IsChecked="False" Click="MenuDolbyMode_Click"/>
+                    <MenuItem x:Name="HdrModeMenuItem"       Header="HDR: Off"
+                              IsCheckable="True" IsChecked="False" Click="MenuHdrMode_Click"/>
+                    <MenuItem x:Name="AutoHdrModeMenuItem"   Header="Auto HDR: Off"
+                              IsCheckable="True" IsChecked="False" Click="MenuAutoHdrMode_Click"/>
                     <Separator/>
                     <MenuItem Header="Exit" Click="MenuExit_Click"/>
                 </ContextMenu>
