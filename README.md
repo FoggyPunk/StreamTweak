@@ -46,6 +46,7 @@ StreamTweak works seamlessly with [Moonlight](https://github.com/moonlight-strea
 - **Virtual display awareness:** when Apollo or Vibepollo is detected, the Display tab focuses automatically on the virtual display used for the streaming session
 
 <details>
+ 
 <summary>Previous highlights — Version 3.1.1 — The "Session Integrity Update"</summary>
 
 - **Session reliability:** fixed sessions remaining stuck as "Active" indefinitely after a restart or crash — orphaned entries are automatically sealed at startup
@@ -56,6 +57,7 @@ StreamTweak works seamlessly with [Moonlight](https://github.com/moonlight-strea
 </details>
 
 <details>
+ 
 <summary>Previous highlights — Version 3.1.0 — The "Atmos Update"</summary>
 
 - **Auto Dolby Atmos for Headphones:** StreamTweak now automatically enables Dolby Atmos for Headphones on Steam Streaming Speakers once a streaming session has been active for 30 continuous seconds — requires [Dolby Access](https://apps.microsoft.com/detail/9n0866fs04w8) installed on the host PC
@@ -67,6 +69,7 @@ StreamTweak works seamlessly with [Moonlight](https://github.com/moonlight-strea
 </details>
 
 <details>
+ 
 <summary>Previous highlights — Version 3.0.0 — The "Awareness Update"</summary>
 
 - **Logs tab:** browse the last 10 speed-change sessions at a glance — trigger mode (Auto/Manual), duration, and original speed are all recorded automatically
