@@ -111,6 +111,39 @@ SpatialAudioDeviceConfiguration.GetForDeviceId(Steam Streaming Speakers)
         └─ SetDefaultSpatialAudioFormatAsync(DolbyAtmos) ──► status: ✓ enabled
 ```
 
+### Display & HDR Control (v3.2.0+)
+`HdrService` reads and controls the HDR state of every active monitor through the Windows **DisplayConfig** API family, entirely via P/Invoke — no external dependencies. Monitor enumeration, resolution, refresh rate, and HDR state are all resolved in a single async pass.
+
+```
+GetDisplayConfigBufferSizes  →  allocate path/mode arrays
+QueryDisplayConfig           →  enumerate active display topology
+        │
+        ├─ DisplayConfigGetDeviceInfo (type 2)  →  friendly name + device path
+        ├─ DisplayConfigGetDeviceInfo (type 1)  →  GDI device name (\\.\DISPLAYn)
+        ├─ EnumDisplaySettings                  →  resolution + refresh rate (Hz)
+        └─ DisplayConfigGetDeviceInfo (type 9)  →  HDR supported / enabled state
+```
+
+Toggling HDR uses a different `DisplayConfigSetDeviceInfo` request type depending on the Windows build detected at runtime:
+
+```
+Build ≥ 26100  (Windows 11 24H2+)   →  type 16  SetHdrState
+Build  < 26100  (Windows 10 / 11)   →  type 10  SetAdvancedColorState
+```
+
+Auto HDR is controlled via the registry key `HKCU\Software\Microsoft\DirectX\UserGpuPreferences` (value `DirectXUserGlobalSettings`, field `AutoHDREnable=0|1`). After each write, `WM_SETTINGCHANGE` is broadcast system-wide so all running applications pick up the change immediately — no reboot or sign-out required.
+
+`MonitorInfo.IsVirtual` is `true` when the device path returned by `DisplayConfigGetDeviceInfo` contains one of the known virtual display vendor strings (`SudoVDA`, `IDD_`, `MttVDD`). When Apollo or Vibepollo is detected as the active streaming server, the Display tab filters the monitor list to show only virtual displays — falling back to all displays with a contextual hint if none is connected yet.
+
+```
+LogParser.FindStreamingAppInfo()
+        │
+        ├─ Apollo / Vibepollo detected
+        │       ├─ IsVirtual monitors found  →  show only virtual display(s)
+        │       └─ none found yet            →  show all  +  "connect Moonlight" hint
+        └─ Sunshine / Vibeshine / none       →  show all physical displays
+```
+
 ## 🪄 How It Works
 
 ### 🤖 Auto Streaming Mode
