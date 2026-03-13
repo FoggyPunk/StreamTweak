@@ -49,8 +49,6 @@ StreamLight and StreamTweak are designed to work together, giving you full contr
 - **Logs Tab:** Session history for the last 10 speed changes — trigger mode, duration, and original speed recorded automatically.
 - **About Tab:** Version info, GitHub link, license badge, and donation button in a dedicated panel.
 
-## ✨ What's New in Version 4.0.0 — The "Foundation Update"
-
 ## ✨ What's New in Version 4.2.0 — The "StreamLight Update"
 
 4.2.0 promotes StreamLight integration to stable and finalizes the TCP listener for production use.
