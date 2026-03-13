@@ -4,6 +4,12 @@ StreamTweak - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamTweak
 
+Version 4.2.0 - The "StreamLight Update" (13/03/2026)
+------------------------------------------
+
+🔧 IMPROVEMENTS:
+- StreamLight integration promoted to stable: TCP listener and NIC speed command handling are now production-ready and fully tested in combination with StreamLight on the client side
+
 Version 4.1.0-pre - The "StreamLight Update" (13/03/2026)
 ------------------------------------------
 
