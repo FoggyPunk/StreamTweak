@@ -10,6 +10,19 @@ StreamTweak works seamlessly with [Moonlight](https://github.com/moonlight-strea
 
 > ⚠️ **Note on Installer Warnings:** When downloading the installer, Windows SmartScreen or your browser may show a security warning. This happens because the executable is not signed with a commercial code‑signing certificate — a common situation for open‑source projects. You can safely choose **Keep** / **Keep anyway**. The full source code is available in this repository for inspection.
 
+## 🔗 StreamLight — The Companion Client
+
+[StreamLight](https://github.com/FoggyBytes/StreamLight) is the official companion client for StreamTweak — a fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) that integrates StreamTweak directly into the streaming client UI.
+
+With StreamLight, you can manage host NIC speed without leaving the client:
+
+- **Show host NIC speed** — query StreamTweak on the host and see the current Ethernet adapter speed at a glance
+- **Set host to 1 Gbps** — send the speed-change command to StreamTweak from the client before connecting, with a built-in 10-second countdown and a 30-second auto-revert if no connection is made
+
+StreamLight and StreamTweak are designed to work together, giving you full control over the streaming setup from both sides of the connection.
+
+> StreamLight is available for **Windows only** and requires StreamTweak to be installed and running on the host PC.
+
 ## 🔥 Key Features
 
 ### 🛜 Network & Streaming Intelligence
