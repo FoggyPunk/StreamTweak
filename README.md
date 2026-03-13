@@ -1,12 +1,9 @@
-# 🎮 StreamTweak
-![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue.svg)
-![Framework](https://img.shields.io/badge/Framework-.NET%208.0-purple.svg)
-![Downloads](https://img.shields.io/github/downloads/foggybytes/StreamTweak/total?label=Downloads&color=orange)
+# 🎮 StreamTweak ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue.svg) ![Framework](https://img.shields.io/badge/Framework-.NET%208.0-purple.svg) ![Downloads](https://img.shields.io/github/downloads/foggybytes/StreamTweak/total?label=Downloads&color=orange)
 
 **StreamTweak** is born to solve technical bottlenecks between Host and Client, offering an intelligent control center to manage your remote gaming PC with a single click.
 
 ## ✅ Compatibility
-StreamTweak works seamlessly with [Moonlight](https://github.com/moonlight-stream/moonlight-qt), [Sunshine](https://github.com/LizardByte/Sunshine), [Apollo](https://github.com/ClassicOldSong/Apollo), [Vibeshine](https://github.com/Nonary/vibeshine), and [Vibepollo](https://github.com/Nonary/Vibepollo).
+StreamTweak works seamlessly with [Moonlight](https://github.com/moonlight-stream/moonlight-qt), [Sunshine](https://github.com/LizardByte/Sunshine), [Apollo](https://github.com/ClassicOldSong/Apollo), [Vibeshine](https://github.com/Nonary/vibeshine), and [Vibepollo](https://github.com/Nonary/Vibepollo), on Windows.
 
 > ⚠️ **Note on Installer Warnings:** When downloading the installer, Windows SmartScreen or your browser may show a security warning. This happens because the executable is not signed with a commercial code‑signing certificate — a common situation for open‑source projects. You can safely choose **Keep** / **Keep anyway**. The full source code is available in this repository for inspection.
 
