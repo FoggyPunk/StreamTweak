@@ -4,6 +4,13 @@ StreamTweak - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamTweak
 
+Version 4.2.2 - The "Bridge Reliability Update" (15/03/2026)
+------------------------------------------
+
+🐛 STABILITY & FIXES:
+• Fixed PREPARE command from StreamLight being silently ignored when Auto Streaming Mode was disabled: the TCP bridge handler now works independently from the Auto Mode toggle — PREPARE correctly triggers the NIC speed change regardless of whether Auto Mode is on or off
+• Fixed UI thread blocking during PREPARE handling: the handler was using Dispatcher.Invoke with an async lambda, which resolved to async void and ran the named-pipe call to StreamTweakService synchronously on the UI thread (up to 5 seconds freeze); switched to Dispatcher.InvokeAsync and Task.Run so the blocking pipe roundtrip no longer stalls the interface
+
 Version 4.2.1 - The "Reliability Update" (15/03/2026)
 ------------------------------------------
 

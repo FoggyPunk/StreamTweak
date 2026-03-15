@@ -740,14 +740,17 @@ namespace StreamTweak
         /// Called when Moonlight fork sends PREPARE.
         /// The user has not launched the stream yet — we set the NIC to 1 Gbps now
         /// so no disconnect occurs when the session starts.
+        /// Note: intentionally independent of isAutoStreamingEnabled — the Bridge is a
+        /// separate input channel and must work even when Auto Mode is off.
         /// </summary>
         private void OnBridgePrepareRequested()
         {
-            Application.Current.Dispatcher.Invoke(async () =>
+            // InvokeAsync avoids blocking the UI thread; ApplySpeed runs off-thread via
+            // Task.Run to prevent the named-pipe Connect() from freezing the UI.
+            _ = Application.Current.Dispatcher.InvokeAsync(async () =>
             {
                 try
                 {
-                    if (!isAutoStreamingEnabled) return;
                     if (isStreamingModeActive) return;
 
                     var ni = NetworkInterface.GetAllNetworkInterfaces()
@@ -756,7 +759,7 @@ namespace StreamTweak
                     if (ni == null || ni.OperationalStatus != OperationalStatus.Up) return;
 
                     long mbps = ni.Speed / 1_000_000;
-                    if (mbps < 1200) return; // Already at 1 Gbps — nothing to do
+                    if (mbps < 1200) return; // Already at or below 1 Gbps — nothing to do
 
                     // Capture original speed
                     var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
@@ -782,12 +785,14 @@ namespace StreamTweak
 
                     isAutoStreamingActive = true;
                     isStreamingModeActive = true;
-                    ApplySpeed(oneGbpsKey);
                     SaveStreamingStateToConfig(true, originalSpeedForAutoStreaming ?? string.Empty);
                     SessionLogger.StartSession("Bridge", originalSpeedForAutoStreaming ?? string.Empty);
                     StartInactivityTimer(); // auto-RESTORE if no client connects within 30s
-
                     UpdateTrayMenu();
+
+                    // Run the blocking named-pipe call off the UI thread
+                    await Task.Run(() => ApplySpeed(oneGbpsKey));
+
                     await PollForIconUpdate(false);
 
                     ToastHelper.Show("StreamTweak Ready",
