@@ -880,43 +880,21 @@ namespace StreamTweak
                 _currentMonitors = await HdrService.GetMonitorsAsync();
                 bool autoHdr = await HdrService.GetAutoHdrAsync();
 
-                // Determine context: Apollo/Vibepollo → prefer virtual display
+                // Show detected streaming app name, without attempting to distinguish
+                // between physical/virtual displays.
                 var appInfo = LogParser.FindStreamingAppInfo();
-                bool apolloMode = appInfo != null &&
-                    (appInfo.AppName.IndexOf("Apollo", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                     appInfo.AppName.IndexOf("Vibepollo", StringComparison.OrdinalIgnoreCase) >= 0);
 
-                List<MonitorInfo> toShow;
+                List<MonitorInfo> toShow = _currentMonitors;
 
-                if (apolloMode)
+                if (appInfo != null)
                 {
-                    // Try to find virtual display(s)
-                    var virtuals = _currentMonitors.FindAll(m => m.IsVirtual);
-                    if (virtuals.Count > 0)
-                    {
-                        toShow = virtuals;
-                        DisplayContextIcon.Source = ExtractExeIcon(appInfo!.ExePath);
-                        DisplayContextText.Text = $"Showing virtual display  ·  {appInfo!.AppName}";
-                        DisplayContextLabel.Visibility = Visibility.Visible;
-                    }
-                    else
-                    {
-                        // Virtual display not (yet) connected — show all
-                        toShow = _currentMonitors;
-                        DisplayContextIcon.Source = ExtractExeIcon(appInfo!.ExePath);
-                        DisplayContextText.Text = $"{appInfo!.AppName} detected — connect Moonlight to see virtual display";
-                        DisplayContextLabel.Visibility = Visibility.Visible;
-                    }
+                    DisplayContextIcon.Source = ExtractExeIcon(appInfo.ExePath);
+                    DisplayContextText.Text = appInfo.AppName;
+                    DisplayContextLabel.Visibility = Visibility.Visible;
                 }
                 else
                 {
-                    toShow = _currentMonitors;
-                    if (appInfo != null)
-                    {
-                        DisplayContextIcon.Source = ExtractExeIcon(appInfo.ExePath);
-                        DisplayContextText.Text = $"Physical display  ·  {appInfo.AppName}";
-                        DisplayContextLabel.Visibility = Visibility.Visible;
-                    }
+                    DisplayContextLabel.Visibility = Visibility.Collapsed;
                 }
 
                 BuildMonitorCards(toShow);

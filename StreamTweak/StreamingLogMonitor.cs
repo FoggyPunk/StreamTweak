@@ -14,6 +14,9 @@ namespace StreamTweak
         private Task? monitoringTask;
         private CancellationTokenSource? cancellationTokenSource;
         private bool isDisposed = false;
+        // Tracks whether we've seen a StreamStarted event since the last StreamStopped.
+        // Prevents false StreamStopped handling when no corresponding start was observed.
+        private bool seenStreamStarted = false;
 
         // How often to re-run the full discovery to catch dynamic logs
         // that appear after startup (e.g. Vibepollo creating logs\ after StreamTweak starts)
@@ -93,8 +96,28 @@ namespace StreamTweak
 
                         if (streamingEvent != LogParser.StreamingEvent.None)
                         {
-                            DebugLog($"Event raised: {streamingEvent}");
-                            StreamingEventDetected?.Invoke(this, new StreamingEventArgs { Event = streamingEvent });
+                            // Basic state machine: only treat StreamStopped if we've previously
+                            // seen a StreamStarted. This reduces false positives from stray
+                            // log lines or rotation artifacts.
+                            if (streamingEvent == LogParser.StreamingEvent.StreamStarted)
+                            {
+                                seenStreamStarted = true;
+                                DebugLog($"Event raised: {streamingEvent}");
+                                StreamingEventDetected?.Invoke(this, new StreamingEventArgs { Event = streamingEvent });
+                            }
+                            else if (streamingEvent == LogParser.StreamingEvent.StreamStopped)
+                            {
+                                if (seenStreamStarted)
+                                {
+                                    seenStreamStarted = false;
+                                    DebugLog($"Event raised: {streamingEvent}");
+                                    StreamingEventDetected?.Invoke(this, new StreamingEventArgs { Event = streamingEvent });
+                                }
+                                else
+                                {
+                                    DebugLog($"Ignored StreamStopped (no prior StreamStarted observed): {line}");
+                                }
+                            }
                         }
                     }
                     else

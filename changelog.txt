@@ -4,6 +4,20 @@ StreamTweak - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamTweak
 
+Version 4.2.3 - The "Display & Logs Refinement Update" (18/03/2026)
+------------------------------------------
+
+🔧 IMPROVEMENTS:
+• Display tab — simplified context label: removed ambiguous "Physical" / "Virtual" detection logic and replaced it with a straightforward display of the detected streaming app name (Apollo, Vibeshine, Vibepollo, or Sunshine) — the tab shows all active monitors regardless, keeping the interface simple and reliable
+• Logs tab — lightning icon refinement: the ⚡ symbol now appears only for truly interrupted sessions (app crash or forced restart), not for normal stream disconnects; a session is marked interrupted only if it was never properly closed (`EndReason == "Interrupted"`); this eliminates false positives where normal closes were misidentified
+• Logs tab — footer removed: removed the confusing footer text explaining the lightning icon, as the new behavior is self-evident; cleared additional space for the session list to breathe
+• Session logger — race condition fix: `SessionLogger.EndSession()` now only sets `EndTime` and `EndReason` once per session, preventing duplicate close attempts from the log monitor and bridge handler from interfering with each other
+• Log monitor — state machine: added a simple state tracker (`seenStreamStarted`) to `StreamingLogMonitor` that prevents spurious `StreamStopped` events (from log rotation, stray lines, or dynamic logs appearing late) from triggering false session closes if no `StreamStarted` was seen first
+
+🐛 STABILITY & FIXES:
+• Fixed lightning icon appearing incorrectly for normally closed streaming sessions
+• Fixed occasional double-close of sessions when both the log monitor and TCP bridge tried to end the same session
+
 Version 4.2.2 - The "Bridge Reliability Update" (15/03/2026)
 ------------------------------------------
 

@@ -49,12 +49,14 @@ StreamLight and StreamTweak are designed to work together, giving you full contr
 - **Logs Tab:** Session history for the last 10 speed changes — trigger mode, duration, and original speed recorded automatically.
 - **About Tab:** Version info, GitHub link, license badge, and donation button in a dedicated panel.
 
-## ✨ What's New in Version 4.2.2 — The "Bridge Reliability Update"
+## ✨ What's New in Version 4.2.3 — The "Display & Logs Refinement Update"
 
-4.2.2 closes two bugs in the [StreamLight](https://github.com/FoggyBytes/StreamLight) bridge handler.
+4.2.3 simplifies the Display and Logs tabs by removing unreliable heuristics and fixing race conditions.
 
-* **Fixed: PREPARE ignored when Auto Mode is disabled —** the TCP bridge handler (`PREPARE` command from [StreamLight](https://github.com/FoggyBytes/StreamLight)) was gated on the Auto Streaming Mode toggle, so disabling Auto Mode silently prevented any NIC speed change on incoming `PREPARE`; the bridge now works independently from Auto Mode
-* **Fixed: UI thread blocking during PREPARE —** the handler used `Dispatcher.Invoke` with an async lambda (resolving to `async void`), which ran the named-pipe call to `StreamTweakService` synchronously on the UI thread and could freeze the interface for up to 5 seconds; switched to `Dispatcher.InvokeAsync` + `Task.Run` so the blocking pipe roundtrip is fully off-thread
+* **Fixed: Lightning icon on normal closes —** the ⚡ symbol was appearing for normally closed streaming sessions due to overly broad end-reason detection; now it only marks truly interrupted sessions (app crash/restart), where `EndReason == "Interrupted"`
+* **Fixed: Double-close race condition —** when both the log monitor and TCP bridge tried to end the same session, the behavior was undefined; `SessionLogger.EndSession()` now only sets `EndTime/EndReason` once, preventing interference
+* **Improved: Display context simplicity —** removed the buggy "Physical / Virtual display" detection logic that was impossible to make reliable for all driver types; the Display tab now simply shows the detected streaming app name (Apollo, Vibeshine, Vibepollo, Sunshine) and displays all active monitors — clean, predictable, no guesswork
+* **Improved: Logs tab clarity —** removed the confusing footer text explaining the lightning icon, since the new behavior is self-evident; redirected the space to the session list for better breathing room
 
 ## 📖 The Technical Story Behind This Project
 This project was born out of a specific frustration in the cloud gaming community. When using game streaming software like **[Moonlight](https://github.com/moonlight-stream/moonlight-qt)** with **Sunshine** or **Apollo**, a known issue occurs if the host PC and the client have mismatched Ethernet link speeds.
@@ -189,7 +191,7 @@ LogParser.FindStreamingAppInfo()
 
 ## 📝 Installation
 1. Go to the **Releases** page of this repository.
-2. Download the latest `StreamTweak_4.2.2_Installer.exe`
+2. Download the latest `StreamTweak_4.2.3_Installer.exe`
 3. Run the installer and enjoy seamless streaming.
 
 ## 🙏 Support the Project

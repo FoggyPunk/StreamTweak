@@ -15,6 +15,9 @@ namespace StreamTweak
         public LUID   AdapterId      { get; set; }
         public string FriendlyName   { get; set; } = string.Empty;
         public string DevicePath     { get; set; } = string.Empty;
+        // EDID values returned by DISPLAYCONFIG — many virtual displays do not expose EDID
+        public ushort EdidManufactureId { get; set; }
+        public ushort EdidProductCodeId  { get; set; }
         public string GdiDeviceName  { get; set; } = string.Empty;
         public bool   HdrEnabled     { get; set; }
         public bool   HdrSupported   { get; set; }
@@ -23,13 +26,33 @@ namespace StreamTweak
         public int    RefreshRateHz  { get; set; }
 
         /// <summary>
-        /// True when the device path contains known virtual display vendor strings
-        /// (SudoVDA / IDD_Sample / MttVDD).
+        /// True when the device path or EDID suggests a virtual display.
+        /// Uses multiple heuristics: known vendor substrings, common virtual driver
+        /// names and missing EDID (many virtual displays don't expose EDID).
         /// </summary>
-        public bool IsVirtual =>
-            DevicePath.IndexOf("SudoVDA", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            DevicePath.IndexOf("IDD_",    StringComparison.OrdinalIgnoreCase) >= 0 ||
-            DevicePath.IndexOf("MttVDD",  StringComparison.OrdinalIgnoreCase) >= 0;
+        public bool IsVirtual
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(DevicePath) == false)
+                {
+                    var d = DevicePath.ToLowerInvariant();
+                    if (d.Contains("sudovda") || d.Contains("idd_") || d.Contains("mttvdd")
+                        || d.Contains("vibe") || d.Contains("vibepollo") || d.Contains("vibeshine")
+                        || d.Contains("moonlight") || d.Contains("vbox") || d.Contains("vmware")
+                        || d.Contains("virtual") || d.Contains("root\\virtual") || d.Contains("root\\v")
+                        || d.Contains("sunshine_virtual") || d.Contains("virtual_monitor"))
+                        return true;
+                }
+
+                // Many virtual displays do not provide EDID information — treat missing
+                // EDID as a strong indicator of a virtual display.
+                if (EdidManufactureId == 0 && EdidProductCodeId == 0)
+                    return true;
+
+                return false;
+            }
+        }
     }
 
     // ─── P/Invoke structures ─────────────────────────────────────────────────────
@@ -289,6 +312,8 @@ namespace StreamTweak
                 {
                     m.FriendlyName = tName.MonitorFriendlyDeviceName ?? string.Empty;
                     m.DevicePath   = tName.MonitorDevicePath          ?? string.Empty;
+                    m.EdidManufactureId = tName.EdidManufactureId;
+                    m.EdidProductCodeId = tName.EdidProductCodeId;
                 }
 
                 if (string.IsNullOrWhiteSpace(m.FriendlyName))

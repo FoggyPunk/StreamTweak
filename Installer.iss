@@ -1,8 +1,8 @@
 ; =====================================================
-; StreamTweak v4.2.2 - GitHub Release Installer
+; StreamTweak v4.2.3 - GitHub Release Installer
 ; =====================================================
 #define MyAppName "StreamTweak"
-#define MyAppVersion "4.2.2"
+#define MyAppVersion "4.2.3"
 #define MyAppPublisher "FoggyBytes"
 #define MyAppExeName "StreamTweak.exe"
 #define MyAppURL "https://github.com/FoggyBytes/StreamTweak"

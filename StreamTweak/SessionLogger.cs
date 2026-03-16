@@ -28,7 +28,7 @@ namespace StreamTweak
                 string duration = d.TotalMinutes >= 1
                     ? $"{(int)d.TotalMinutes}m {d.Seconds}s"
                     : $"{d.Seconds}s";
-                return EndReason == "Disconnected" ? $"{duration} ⚡" : duration;
+                return EndReason == "Interrupted" ? $"{duration} ⚡" : duration;
             }
         }
 
@@ -105,9 +105,15 @@ namespace StreamTweak
                 var entry = sessions.FirstOrDefault(s => s.Id == _activeSessionId);
                 if (entry != null)
                 {
-                    entry.EndTime = DateTime.Now;
-                    entry.EndReason = endReason;
-                    Save(sessions);
+                    // Only set EndTime/EndReason if the entry hasn't already been closed.
+                    // This avoids races where multiple components attempt to end the
+                    // same session (e.g. Bridge restore + log-monitor inactivity).
+                    if (entry.EndTime == null)
+                    {
+                        entry.EndTime = DateTime.Now;
+                        entry.EndReason = endReason;
+                        Save(sessions);
+                    }
                 }
                 _activeSessionId = null;
             }
