@@ -438,51 +438,32 @@ namespace StreamTweak
             catch { ApplyDarkTheme(); }
         }
 
-        private void SaveConfig(bool saveAdapter)
-        {
-            try
+        private void SaveConfig(bool saveAdapter) =>
+            PatchConfig(d =>
             {
-                string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
-                var data = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
-                           ?? new Dictionary<string, object>();
-
                 if (saveAdapter && AdapterComboBox.SelectedItem is string adapter)
-                    data["NetworkAdapterName"] = adapter;
+                    d["NetworkAdapterName"] = adapter;
+            });
 
-                File.WriteAllText(configFilePath,
-                    JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
-            }
-            catch { }
-        }
+        private void SaveStreamingStateToConfig(bool streamingMode, string originalSpeedKey) =>
+            PatchConfig(d => { d["StreamingMode"] = streamingMode; d["OriginalSpeed"] = originalSpeedKey; });
 
-        private void SaveStreamingStateToConfig(bool streamingMode, string originalSpeedKey)
+        private void SaveAutoStreamingStateToConfig() =>
+            PatchConfig(d => d["AutoStreamingEnabled"] = isAutoStreamingEnabled);
+
+        private void PatchConfig(Action<Dictionary<string, object>> patch)
         {
             try
             {
                 string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
                 var data = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
                            ?? new Dictionary<string, object>();
-                data["StreamingMode"] = streamingMode;
-                data["OriginalSpeed"] = originalSpeedKey;
+                patch(data);
                 File.WriteAllText(configFilePath,
                     JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
             }
             catch { }
-        }
-
-        private void SaveAutoStreamingStateToConfig()
-        {
-            try
-            {
-                string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
-                var data = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
-                           ?? new Dictionary<string, object>();
-                data["AutoStreamingEnabled"] = isAutoStreamingEnabled;
-                File.WriteAllText(configFilePath,
-                    JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
-            }
-            catch { }
-        }
+}
 
         // ─── Adapters ───────────────────────────────────────────────────────
 
@@ -791,19 +772,8 @@ namespace StreamTweak
             AudioMonitorEnabledChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        private void SaveAudioMonitorStateToConfig()
-        {
-            try
-            {
-                string json = File.Exists(configFilePath) ? File.ReadAllText(configFilePath) : "{}";
-                var data = JsonSerializer.Deserialize<Dictionary<string, object>>(json)
-                           ?? new Dictionary<string, object>();
-                data["AudioMonitorEnabled"] = _isAudioMonitorEnabled;
-                File.WriteAllText(configFilePath,
-                    JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
-            }
-            catch { }
-        }
+        private void SaveAudioMonitorStateToConfig() =>
+            PatchConfig(d => d["AudioMonitorEnabled"] = _isAudioMonitorEnabled);
 
         public void SyncAudioMonitorState(bool enabled)
         {
@@ -1111,9 +1081,9 @@ namespace StreamTweak
                     System.Windows.MessageBoxButton.OK,
                     System.Windows.MessageBoxImage.Warning);
 
-                _hdrToggleBusy = true;
+                _autoHdrBusy = true;
                 AutoHdrToggle.IsChecked = !enable;
-                _hdrToggleBusy = false;
+                _autoHdrBusy = false;
                 return;
             }
 

@@ -148,18 +148,6 @@ namespace StreamTweak
             _disposed = true;
         }
 
-        private static void DebugLog(string message)
-        {
-            try
-            {
-                string path = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "StreamTweak", "debug.log");
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                File.AppendAllText(path,
-                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}{Environment.NewLine}");
-            }
-            catch { }
-        }
+        private static void DebugLog(string message) => DebugLogger.Log(message);
     }
 }

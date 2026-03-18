@@ -49,14 +49,15 @@ StreamLight and StreamTweak are designed to work together, giving you full contr
 - **Logs Tab:** Session history for the last 10 speed changes — trigger mode, duration, and original speed recorded automatically.
 - **About Tab:** Version info, GitHub link, license badge, and donation button in a dedicated panel.
 
-## ✨ What's New in Version 4.2.3 — The "Display & Logs Refinement Update"
+## ✨ What's New in Version 4.2.4 — The "Under the Hood Update"
 
-4.2.3 simplifies the Display and Logs tabs by removing unreliable heuristics and fixing race conditions.
+4.2.4 is a focused quality release: two silent bugs squashed and recurring code duplication removed.
 
-* **Fixed: Lightning icon on normal closes —** the ⚡ symbol was appearing for normally closed streaming sessions due to overly broad end-reason detection; now it only marks truly interrupted sessions (app crash/restart), where `EndReason == "Interrupted"`
-* **Fixed: Double-close race condition —** when both the log monitor and TCP bridge tried to end the same session, the behavior was undefined; `SessionLogger.EndSession()` now only sets `EndTime/EndReason` once, preventing interference
-* **Improved: Display context simplicity —** removed the buggy "Physical / Virtual display" detection logic that was impossible to make reliable for all driver types; the Display tab now simply shows the detected streaming app name (Apollo, Vibeshine, Vibepollo, Sunshine) and displays all active monitors — clean, predictable, no guesswork
-* **Improved: Logs tab clarity —** removed the confusing footer text explaining the lightning icon, since the new behavior is self-evident; redirected the space to the session list for better breathing room
+* **Fixed: Auto HDR guard flag —** `AutoHdrToggle_Changed` was setting `_hdrToggleBusy` instead of `_autoHdrBusy` when reverting the toggle after a failed `SetAutoHdrAsync`; the wrong flag silenced all subsequent Auto HDR toggle events and could inadvertently block HDR monitor toggles
+* **Fixed: PowerShell fallback always reporting success —** `ApplySpeedViaPowerShell` returned `true` unconditionally after waiting for the process to exit, regardless of the exit code; failed speed-change commands were silently reported as `OK` to the pipe client — now the exit code is checked before responding
+* **Improved: Dead null-guards removed —** `NetworkManager.GetSupportedSpeeds` always returns a (possibly empty) `Dictionary`, never `null`; five redundant `if (speeds != null)` guards in `App.xaml.cs` have been cleaned up
+* **Improved: Shared `DebugLogger` —** the identical `DebugLog` implementation previously copy-pasted across `App`, `StreamTweakBridge`, `LogParser`, and `StreamingLogMonitor` is now consolidated in a single `DebugLogger.Log` entry point
+* **Improved: `PatchConfig` helper —** the repeated JSON read / patch / write pattern previously spread across seven `SaveXxx` methods in `App.xaml.cs` and `SettingsWindow.xaml.cs` is now unified behind a single `PatchConfig(Action<Dictionary>)` helper in each class
 
 ## 📖 The Technical Story Behind This Project
 This project was born out of a specific frustration in the cloud gaming community. When using game streaming software like **[Moonlight](https://github.com/moonlight-stream/moonlight-qt)** with **Sunshine** or **Apollo**, a known issue occurs if the host PC and the client have mismatched Ethernet link speeds.
@@ -191,7 +192,7 @@ LogParser.FindStreamingAppInfo()
 
 ## 📝 Installation
 1. Go to the **Releases** page of this repository.
-2. Download the latest `StreamTweak_4.2.3_Installer.exe`
+2. Download the latest `StreamTweak_4.2.4_Installer.exe`
 3. Run the installer and enjoy seamless streaming.
 
 ## 🙏 Support the Project

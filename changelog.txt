@@ -4,7 +4,20 @@ StreamTweak - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamTweak
 
-Version 4.2.3 - The "Display & Logs Refinement Update" (18/03/2026)
+Version 4.2.4 - The "Under the Hood Update" (18/03/2026)
+------------------------------------------
+
+🐛 STABILITY & FIXES:
+• Fixed AutoHdrToggle_Changed reverting with the wrong guard flag on error: _hdrToggleBusy was set/cleared instead of _autoHdrBusy, which silently suppressed all subsequent Auto HDR toggle events and could incorrectly block HDR monitor toggles
+• Fixed ApplySpeedViaPowerShell always returning true regardless of the PowerShell process exit code: failed speed-change commands were silently reported as successful to the pipe client
+
+🔧 IMPROVEMENTS:
+• Removed dead null-checks on GetSupportedSpeeds return value: the method always returns a (possibly empty) Dictionary — never null; all five redundant call-site guards in App.xaml.cs have been removed
+• Removed superfluous CreateNoWindow = true from ApplyWithUac in SpeedChanger: the property is silently ignored by Windows when UseShellExecute = true
+• Extracted shared DebugLogger class: the identical DebugLog implementation previously duplicated across App, StreamTweakBridge, LogParser, and StreamingLogMonitor is now consolidated in a single StreamTweak.DebugLogger.Log entry point
+• Centralized config persistence with PatchConfig helper: the repeated JSON read/patch/write pattern previously spread across seven SaveXxx methods in App.xaml.cs and SettingsWindow.xaml.cs is now unified behind a single PatchConfig(Action<Dictionary>) helper in each class
+
+Version 4.2.3 - The "Display & Logs Refinement Update" (16/03/2026)
 ------------------------------------------
 
 🔧 IMPROVEMENTS:

@@ -255,7 +255,7 @@ namespace StreamTweak
         private void ApplySpeed(string speedKey)
         {
             var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
-            if (speeds == null || !speeds.TryGetValue(speedKey, out string? registryValue)) return;
+            if (!speeds.TryGetValue(speedKey, out string? registryValue)) return;
 
             bool ok = SpeedChanger.Apply(adapterName, registryValue);
             if (!ok) SpeedChanger.ApplyWithUac(adapterName, registryValue);
@@ -264,7 +264,6 @@ namespace StreamTweak
         private string? Find1GbpsKey()
         {
             var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
-            if (speeds == null) return null;
 
             foreach (var kvp in speeds)
             {
@@ -276,18 +275,26 @@ namespace StreamTweak
             return null;
         }
 
-        private void SaveStreamingStateToConfig(bool streamingMode, string originalSpeedKey)
+        private void SaveStreamingStateToConfig(bool streamingMode, string originalSpeedKey) =>
+            PatchConfig(d => { d["StreamingMode"] = streamingMode; d["OriginalSpeed"] = originalSpeedKey; });
+
+        private void SaveAudioMonitorToConfig(bool enabled) =>
+            PatchConfig(d => d["AudioMonitorEnabled"] = enabled);
+
+        private void SaveAutoStreamingToConfig(bool enabled) =>
+            PatchConfig(d => d["AutoStreamingEnabled"] = enabled);
+
+        private void PatchConfig(Action<System.Collections.Generic.Dictionary<string, object>> patch)
         {
             try
             {
                 string configPath = GetConfigPath();
                 string json = File.Exists(configPath) ? File.ReadAllText(configPath) : "{}";
-                var configData = JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, object>>(json)
-                                 ?? new System.Collections.Generic.Dictionary<string, object>();
-                configData["StreamingMode"] = streamingMode;
-                configData["OriginalSpeed"] = originalSpeedKey;
+                var data = JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, object>>(json)
+                           ?? new System.Collections.Generic.Dictionary<string, object>();
+                patch(data);
                 Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
-                File.WriteAllText(configPath, JsonSerializer.Serialize(configData,
+                File.WriteAllText(configPath, JsonSerializer.Serialize(data,
                     new JsonSerializerOptions { WriteIndented = true }));
             }
             catch { }
@@ -299,21 +306,18 @@ namespace StreamTweak
             {
                 // Capture current speed as original
                 var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
-                if (speeds != null)
+                var ni = NetworkInterface.GetAllNetworkInterfaces()
+                    .FirstOrDefault(n => n.Name.Equals(adapterName, StringComparison.OrdinalIgnoreCase));
+                if (ni != null)
                 {
-                    var ni = NetworkInterface.GetAllNetworkInterfaces()
-                        .FirstOrDefault(n => n.Name.Equals(adapterName, StringComparison.OrdinalIgnoreCase));
-                    if (ni != null)
+                    long mbps = ni.Speed / 1_000_000;
+                    foreach (var kvp in speeds)
                     {
-                        long mbps = ni.Speed / 1_000_000;
-                        foreach (var kvp in speeds)
-                        {
-                            string kl = kvp.Key.ToLower();
-                            bool match = mbps >= 2000
-                                ? kl.Contains("2.5") || kl.Contains("2500")
-                                : kl.Contains(mbps.ToString());
-                            if (match) { originalSpeedForStreaming = kvp.Key; break; }
-                        }
+                        string kl = kvp.Key.ToLower();
+                        bool match = mbps >= 2000
+                            ? kl.Contains("2.5") || kl.Contains("2500")
+                            : kl.Contains(mbps.ToString());
+                        if (match) { originalSpeedForStreaming = kvp.Key; break; }
                     }
                 }
 
@@ -421,38 +425,6 @@ namespace StreamTweak
                 _trayAutoHdrEnabled = enable;
                 UpdateTrayMenu();
                 settingsWindow?.RefreshDisplayPanelIfVisible();
-            }
-            catch { }
-        }
-
-        private void SaveAudioMonitorToConfig(bool enabled)
-        {
-            try
-            {
-                string configPath = GetConfigPath();
-                string json = File.Exists(configPath) ? File.ReadAllText(configPath) : "{}";
-                var configData = JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, object>>(json)
-                                 ?? new System.Collections.Generic.Dictionary<string, object>();
-                configData["AudioMonitorEnabled"] = enabled;
-                Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
-                File.WriteAllText(configPath, JsonSerializer.Serialize(configData,
-                    new JsonSerializerOptions { WriteIndented = true }));
-            }
-            catch { }
-        }
-
-        private void SaveAutoStreamingToConfig(bool enabled)
-        {
-            try
-            {
-                string configPath = GetConfigPath();
-                string json = File.Exists(configPath) ? File.ReadAllText(configPath) : "{}";
-                var configData = JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, object>>(json)
-                                 ?? new System.Collections.Generic.Dictionary<string, object>();
-                configData["AutoStreamingEnabled"] = enabled;
-                Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
-                File.WriteAllText(configPath, JsonSerializer.Serialize(configData,
-                    new JsonSerializerOptions { WriteIndented = true }));
             }
             catch { }
         }
@@ -636,16 +608,13 @@ namespace StreamTweak
 
                 // Capture original speed
                 var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
-                if (speeds != null)
+                foreach (var kvp in speeds)
                 {
-                    foreach (var kvp in speeds)
-                    {
-                        string kl = kvp.Key.ToLower();
-                        bool match = mbps >= 2000
-                            ? kl.Contains("2.5") || kl.Contains("2500")
-                            : kl.Contains(mbps.ToString());
-                        if (match) { originalSpeedForAutoStreaming = kvp.Key; break; }
-                    }
+                    string kl = kvp.Key.ToLower();
+                    bool match = mbps >= 2000
+                        ? kl.Contains("2.5") || kl.Contains("2500")
+                        : kl.Contains(mbps.ToString());
+                    if (match) { originalSpeedForAutoStreaming = kvp.Key; break; }
                 }
 
                 string? oneGbpsKey = Find1GbpsKey();
@@ -763,16 +732,13 @@ namespace StreamTweak
 
                     // Capture original speed
                     var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
-                    if (speeds != null)
+                    foreach (var kvp in speeds)
                     {
-                        foreach (var kvp in speeds)
-                        {
-                            string kl = kvp.Key.ToLower();
-                            bool match = mbps >= 2000
-                                ? kl.Contains("2.5") || kl.Contains("2500")
-                                : kl.Contains(mbps.ToString());
-                            if (match) { originalSpeedForAutoStreaming = kvp.Key; break; }
-                        }
+                        string kl = kvp.Key.ToLower();
+                        bool match = mbps >= 2000
+                            ? kl.Contains("2.5") || kl.Contains("2500")
+                            : kl.Contains(mbps.ToString());
+                        if (match) { originalSpeedForAutoStreaming = kvp.Key; break; }
                     }
 
                     string? oneGbpsKey = Find1GbpsKey();
@@ -843,18 +809,6 @@ namespace StreamTweak
 
         #endregion
 
-        private static void DebugLog(string message)
-        {
-            try
-            {
-                string debugLogPath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "StreamTweak", "debug.log");
-                Directory.CreateDirectory(Path.GetDirectoryName(debugLogPath)!);
-                File.AppendAllText(debugLogPath,
-                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}{Environment.NewLine}");
-            }
-            catch { }
-        }
+        private static void DebugLog(string message) => DebugLogger.Log(message);
     }
 }

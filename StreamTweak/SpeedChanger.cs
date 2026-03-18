@@ -61,8 +61,7 @@ Restart-NetAdapter -Name $adapterName -Confirm:$false
                     FileName = "powershell.exe",
                     Arguments = $"-ExecutionPolicy Bypass -WindowStyle Hidden -File \"{tempScript}\"",
                     UseShellExecute = true,
-                    Verb = "runas",
-                    CreateNoWindow = true
+                    Verb = "runas"
                 };
 
                 using var process = System.Diagnostics.Process.Start(psi);

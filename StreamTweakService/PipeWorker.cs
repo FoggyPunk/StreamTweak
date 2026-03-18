@@ -158,8 +158,13 @@ public class PipeWorker : BackgroundService
             using var process = System.Diagnostics.Process.Start(psi);
             process?.WaitForExit();
 
-            _logger.LogInformation("PowerShell speed change applied successfully.");
-            return true;
+            bool succeeded = process?.ExitCode == 0;
+            if (succeeded)
+                _logger.LogInformation("PowerShell speed change applied successfully.");
+            else
+                _logger.LogWarning("PowerShell speed change exited with code {Code}", process?.ExitCode);
+
+            return succeeded;
         }
         catch (Exception ex)
         {
