@@ -92,21 +92,48 @@ StreamTweak automatically locates the streaming server log file at startup and r
                                →  config\sunshine.log (static)
 ```
 
-### Session Logging (v3.0.0+)
-Every speed-change event — whether triggered automatically or manually — is recorded as a `SessionEntry` and persisted to `%LOCALAPPDATA%\StreamTweak\sessions.json`. The Logs tab reads this file and displays the last 10 sessions in real time.
+### Session Logging (v3.0.0+, overhauled in v4.3.0)
+Every streaming session — regardless of whether NIC throttle was applied — is recorded as a `SessionEntry` and persisted to `%LOCALAPPDATA%\StreamTweak\sessions.json`. The Logs tab reads this file and displays the last 10 sessions in real time.
 
 ```
 SessionEntry {
   Id             →  short unique identifier
   StartTime      →  when the session began
-  EndTime        →  when the original speed was restored (null if active or interrupted)
+  EndTime        →  when the session ended (null if active or interrupted)
   TriggerMode    →  "Auto" | "Manual"
-  OriginalSpeed  →  the speed key that will be restored on session end
+  OriginalSpeed  →  the speed key that will be restored on session end (null if no throttle)
   EndReason      →  "User" | "Disconnected" | "Interrupted" (null if still active)
 }
 ```
 
+`NicThrottleDisplay` and `OriginalNicSpeedDisplay` are computed display properties derived from `OriginalSpeed`: if it is set the session involved a speed change (Yes / the original speed); otherwise the NIC was not throttled (No / N/A). Session tracking (`_isAutoSessionActive`) is independent of the NIC throttle state (`isAutoStreamingActive`), so every detected stream is logged even when Auto Streaming Mode is off.
+
 The same discovery pipeline used for log monitoring (`LogParser.FindStreamingAppInfo`) is surfaced in the Logs tab, so the user can verify at a glance which streaming server StreamTweak has detected and navigate directly to its log folder.
+
+### Streaming App Manager (v4.3.0+)
+`ManagedAppController` is a shared static class that reads `%LOCALAPPDATA%\StreamTweak\managedapps.json` and provides kill/relaunch logic used both by the manual buttons in the Apps tab and by the automated session lifecycle hooks in `App.xaml.cs`.
+
+```
+Stream start detected
+        │
+        ▼
+ManagedAppController.KillRunning()
+        │  filters AutoManage = true
+        ├─ Process.GetProcessesByName(nameNoExt)  →  kill all matching processes
+        └─ fallback: full process scan by MainModule.FileName  →  handles Electron / renamed hosts
+        │
+        ▼
+_appsToRelaunch  ←  paths of processes that were actually running
+
+Stream end detected
+        │
+        ▼
+ManagedAppController.StartApps(_appsToRelaunch)
+        │  Process.Start with UseShellExecute = true
+        └─ best-effort, silent — each app restarted independently
+```
+
+The kill step runs at all three session-start entry points (`HandleAutoStreamStart`, manual Start button, TCP bridge `PREPARE` command), ensuring consistent behavior regardless of how the session was initiated.
 
 ### Auto Dolby Atmos for Headphones (v3.1.0+)
 When a streaming session is detected and remains active for 30 continuous seconds, `DolbyAudioMonitor` queries the Windows Spatial Audio API (`SpatialAudioDeviceConfiguration`) on Steam Streaming Speakers and sets Dolby Atmos for Headphones as the active spatial audio format. Detection of [Dolby Access](https://apps.microsoft.com/detail/9n0866fs04w8) also uses the same API — if any render device reports `DolbyAtmosForHeadphones` as a supported format, the feature is considered available.
@@ -192,6 +219,13 @@ LogParser.FindStreamingAppInfo()
 4. When a streaming session starts and stays active for **30 seconds**, StreamTweak automatically sets Dolby Atmos for Headphones as the active spatial audio format on Steam Streaming Speakers
 5. The Status box in the Audio tab turns **green** to confirm activation
 6. When the streaming session ends, the countdown is cancelled — activation only happens once per session
+
+### 📱 Streaming App Manager
+1. Open the **Apps** tab and click **Add** to add any executable you want StreamTweak to manage
+2. Use the toggle next to each app to include or exclude it from automation independently
+3. When a streaming session starts, StreamTweak automatically kills all apps with AutoManage enabled and remembers which ones were running
+4. When the session ends, those apps are automatically relaunched
+5. Use **End now** and **Restart** at any time to kill or relaunch a specific app on demand, without waiting for a streaming session
 
 ## 📝 Installation
 1. Go to the **Releases** page of this repository.
