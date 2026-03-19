@@ -15,10 +15,11 @@ With StreamLight, you can manage host NIC speed without leaving the client:
 
 - **Show host NIC speed** — query StreamTweak on the host and see the current Ethernet adapter speed at a glance
 - **Set host to 1 Gbps** — send the speed-change command to StreamTweak from the client before connecting, with a built-in 10-second countdown and a 30-second auto-revert if no connection is made
+- **Host metrics in overlay** *(StreamLight 1.2.0+)* — StreamLight's performance overlay now includes a live "Host Metrics" section showing GPU %, GPU encoder %, GPU temperature, VRAM used / total (MB), CPU %, and network TX (Mbps) pulled directly from StreamTweak in real time
 
 StreamLight and StreamTweak are designed to work together, giving you full control over the streaming setup from both sides of the connection.
 
-> StreamLight is available for **Windows only** and requires StreamTweak to be installed and running on the host PC.
+> StreamLight is available for **Windows only** and requires StreamTweak to be installed and running on the host PC. Host metrics in the overlay require **StreamLight 1.2.0** or later.
 
 ## 🔥 Key Features
 
@@ -54,13 +55,15 @@ StreamLight and StreamTweak are designed to work together, giving you full contr
 - **Logs Tab:** Full session history — every streaming session is recorded regardless of whether NIC throttle was applied, with NIC Throttle (Yes/No), Original NIC Speed, and timestamped date including year.
 - **About Tab:** Version info, GitHub link, license badge, and donation button in a dedicated panel.
 
-## ✨ What's New in Version 4.3.0 — The "App Manager Update"
+## ✨ What's New in Version 4.4.0 — The "Telemetry Update"
 
-4.3.0 brings a new Streaming App Manager, a full session logging overhaul, and a more resilient Dolby Atmos activation chain.
+4.4.0 adds real-time host metrics collection and exposes them to StreamLight via a new STATS command on the TCP bridge, enabling a live host telemetry section in StreamLight's performance overlay.
 
-* **New: Streaming App Manager —** a configurable list of apps that StreamTweak automatically kills at session start and relaunches at session end; each app has an independent AutoManage toggle; manual kill and restart buttons are available from the Apps tab without waiting for a streaming session
-* **Improved: Session logging —** all streaming sessions are now recorded regardless of whether NIC throttle was applied; the Logs tab gains a NIC Throttle column (Yes/No), an Original NIC Speed column, and the year in the date display; the old Mode column has been removed
-* **Improved: Dolby Atmos retry loop —** after the initial 30-second wait, `DolbyAudioMonitor` now retries finding Steam Streaming Speakers every 5 seconds for up to 3 minutes, handling cases where the Windows Audio service is still initializing at startup (e.g. early auto-login)
+* **New: Host metrics collection —** StreamTweak collects GPU usage %, GPU encoder usage %, GPU temperature (NVIDIA only via NVML), VRAM used and total (MB, total NVIDIA only), CPU usage %, and network TX (Mbps) in real time using PDH PerformanceCounters and NVML P/Invoke
+* **New: STATS TCP command —** the bridge on port 47998 accepts a new `STATS` command and returns a JSON payload; StreamLight 1.2.0 or later reads this data and displays it in the performance overlay under a dedicated "Host Metrics" section
+* **Improved: Async metrics init —** `HostMetricsCollector` initialises on a background thread to avoid any impact on WPF startup time; counter list is refreshed every 60 seconds to track ephemeral GPU Engine instances
+
+> StreamLight 1.2.0 or later is required to display host metrics in the overlay.
 
 ## 📖 The Technical Story Behind This Project
 This project was born out of a specific frustration in the cloud gaming community. When using game streaming software like **[Moonlight](https://github.com/moonlight-stream/moonlight-qt)** with **Sunshine** or **Apollo**, a known issue occurs if the host PC and the client have mismatched Ethernet link speeds.
@@ -229,7 +232,7 @@ LogParser.FindStreamingAppInfo()
 
 ## 📝 Installation
 1. Go to the **Releases** page of this repository.
-2. Download the latest `StreamTweak_4.3.0_Installer.exe`
+2. Download the latest `StreamTweak_4.4.0_Installer.exe`
 3. Run the installer and enjoy seamless streaming.
 
 ## 🙏 Support the Project

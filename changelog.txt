@@ -4,6 +4,23 @@ StreamTweak - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamTweak
 
+Version 4.4.0 - The "Telemetry Update" (20/03/2026)
+------------------------------------------
+
+✨ NEW FEATURES:
+• Host metrics collection: StreamTweak now collects real-time host PC metrics — GPU usage %, GPU encoder usage %, GPU temperature (°C, NVIDIA only via NVML), VRAM used (MB), VRAM total (MB, NVIDIA only), CPU usage %, and network TX (Mbps) — and serves them to StreamLight via a new STATS command on the TCP bridge (port 47998)
+• STATS command: the TCP bridge accepts a new STATS command that returns a JSON payload (e.g. {"gpu":45,"gpu_enc":12,"gpu_temp":62,"vram_used":4096,"vram_total":8192,"cpu":18,"net_tx":80}) for consumption by StreamLight's overlay
+• Cross-vendor GPU metrics via PDH PerformanceCounters: GPU utilization (3D engine), GPU encoder utilization, and VRAM used are read with System.Diagnostics.PerformanceCounter using the GPU Engine and GPU Process Memory performance counters — works on NVIDIA, AMD, and Intel Arc
+• NVML P/Invoke for GPU temperature and total VRAM (NVIDIA only): temperature and total VRAM capacity are read directly from nvml.dll (shipped with NVIDIA drivers) via P/Invoke; on non-NVIDIA systems these fields report -1 and no error is raised
+• Metrics unavailable for StreamLight: if StreamTweak is not reachable or metrics are not available, StreamLight's overlay omits the host metrics section entirely — no fallback values, no placeholders
+
+🔧 IMPROVEMENTS:
+• HostMetricsCollector initialises asynchronously on a background Task to avoid any impact on WPF startup time
+• GPU Engine PDH counter list is rebuilt every 60 seconds to handle processes appearing and disappearing at runtime (instances are per-process and ephemeral)
+• VRAM reads use RawValue (int64) instead of NextValue (float) to avoid precision loss on systems with more than 2 GB of dedicated VRAM
+
+⚠️ REQUIRES: StreamLight 1.2.0 or later for the host metrics overlay feature.
+
 Version 4.3.0 - The "App Manager Update" (19/03/2026)
 ------------------------------------------
 

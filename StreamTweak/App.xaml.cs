@@ -45,6 +45,9 @@ namespace StreamTweak
         // Moonlight fork TCP bridge
         private readonly StreamTweakBridge _bridge = new();
 
+        // Real-time host metrics (GPU, CPU, VRAM, network) for the STATS command
+        private readonly HostMetricsCollector _metricsCollector = new();
+
         // Inactivity timer — prevents restoring speed on temporary reconnect disconnects
         private System.Windows.Threading.DispatcherTimer? inactivityTimer = null;
         private const int INACTIVITY_TIMEOUT_MS = 30000;
@@ -82,6 +85,7 @@ namespace StreamTweak
                 var (mbps, connected) = GetCurrentSpeed();
                 return connected ? mbps.ToString() : "UNKNOWN";
             };
+            _bridge.StatsProvider = () => _metricsCollector.GetLatestSample().ToJson();
         }
 
         private void LoadConfig()
@@ -530,6 +534,7 @@ namespace StreamTweak
             _bridge.PrepareRequested -= OnBridgePrepareRequested;
             _bridge.RestoreRequested -= OnBridgeRestoreRequested;
             _bridge.Dispose();
+            _metricsCollector.Dispose();
             StopLogMonitorForced();
             _dolbyMonitor.Disable();
             tb?.Dispose();

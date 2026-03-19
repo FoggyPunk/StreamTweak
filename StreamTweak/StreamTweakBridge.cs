@@ -21,8 +21,9 @@ namespace StreamTweak
     /// Each connection is short-lived: client sends one line, server replies "OK",
     /// the speed string, or "ERR".
     /// 
-    /// Wire up StatusProvider in App.xaml.cs after _bridge.Start():
+    /// Wire up StatusProvider and StatsProvider in App.xaml.cs after _bridge.Start():
     ///   _bridge.StatusProvider = () => GetCurrentLinkSpeedMbps().ToString();
+    ///   _bridge.StatsProvider  = () => _metricsCollector.GetLatestSample().ToJson();
     /// </summary>
     public sealed class StreamTweakBridge : IDisposable
     {
@@ -34,6 +35,14 @@ namespace StreamTweak
         /// Set this in App.xaml.cs after creating the bridge.
         /// </summary>
         public Func<string>? StatusProvider { get; set; }
+
+        /// <summary>
+        /// Optional delegate that returns a JSON string of real-time host metrics.
+        /// Called when a STATS command arrives. Should return the output of
+        /// HostMetricsSample.ToJson(), or "STATS_UNAVAILABLE" on failure.
+        /// Set this in App.xaml.cs after creating the bridge.
+        /// </summary>
+        public Func<string>? StatsProvider { get; set; }
 
         private TcpListener? _listener;
         private CancellationTokenSource? _cts;
@@ -125,6 +134,11 @@ namespace StreamTweak
                         case "STATUS":
                             string status = StatusProvider?.Invoke() ?? "UNKNOWN";
                             await writer.WriteLineAsync(status);
+                            break;
+
+                        case "STATS":
+                            string stats = StatsProvider?.Invoke() ?? "STATS_UNAVAILABLE";
+                            await writer.WriteLineAsync(stats);
                             break;
 
                         default:
