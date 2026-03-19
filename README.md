@@ -45,19 +45,22 @@ StreamLight and StreamTweak are designed to work together, giving you full contr
 - **Tray Control:** Right-click the tray icon to toggle Auto Mode, check current link speed, and monitor streaming session status — all without opening Settings.
 - **Streaming App Detection:** StreamTweak locates the log folder of the active streaming server and lets you open it in Explorer with one click.
 
+### 📱 Streaming App Manager
+- **Auto kill & relaunch:** Define a list of apps that StreamTweak automatically terminates at session start and restarts at session end — useful for apps like Hue Sync that conflict when running on both host and client simultaneously.
+- **Per-app AutoManage toggle:** Each entry can be individually included or excluded from automation while staying in the list.
+- **Manual controls:** Kill or restart any listed app on demand from the Apps tab, without waiting for a streaming session.
+
 ### 📚 System Info & Diagnostics
-- **Logs Tab:** Session history for the last 10 speed changes — trigger mode, duration, and original speed recorded automatically.
+- **Logs Tab:** Full session history — every streaming session is recorded regardless of whether NIC throttle was applied, with NIC Throttle (Yes/No), Original NIC Speed, and timestamped date including year.
 - **About Tab:** Version info, GitHub link, license badge, and donation button in a dedicated panel.
 
-## ✨ What's New in Version 4.2.4 — The "Under the Hood Update"
+## ✨ What's New in Version 4.3.0 — The "App Manager Update"
 
-4.2.4 is a focused quality release: two silent bugs squashed and recurring code duplication removed.
+4.3.0 brings a new Streaming App Manager, a full session logging overhaul, and a more resilient Dolby Atmos activation chain.
 
-* **Fixed: Auto HDR guard flag —** `AutoHdrToggle_Changed` was setting `_hdrToggleBusy` instead of `_autoHdrBusy` when reverting the toggle after a failed `SetAutoHdrAsync`; the wrong flag silenced all subsequent Auto HDR toggle events and could inadvertently block HDR monitor toggles
-* **Fixed: PowerShell fallback always reporting success —** `ApplySpeedViaPowerShell` returned `true` unconditionally after waiting for the process to exit, regardless of the exit code; failed speed-change commands were silently reported as `OK` to the pipe client — now the exit code is checked before responding
-* **Improved: Dead null-guards removed —** `NetworkManager.GetSupportedSpeeds` always returns a (possibly empty) `Dictionary`, never `null`; five redundant `if (speeds != null)` guards in `App.xaml.cs` have been cleaned up
-* **Improved: Shared `DebugLogger` —** the identical `DebugLog` implementation previously copy-pasted across `App`, `StreamTweakBridge`, `LogParser`, and `StreamingLogMonitor` is now consolidated in a single `DebugLogger.Log` entry point
-* **Improved: `PatchConfig` helper —** the repeated JSON read / patch / write pattern previously spread across seven `SaveXxx` methods in `App.xaml.cs` and `SettingsWindow.xaml.cs` is now unified behind a single `PatchConfig(Action<Dictionary>)` helper in each class
+* **New: Streaming App Manager —** a configurable list of apps that StreamTweak automatically kills at session start and relaunches at session end; each app has an independent AutoManage toggle; manual kill and restart buttons are available from the Apps tab without waiting for a streaming session
+* **Improved: Session logging —** all streaming sessions are now recorded regardless of whether NIC throttle was applied; the Logs tab gains a NIC Throttle column (Yes/No), an Original NIC Speed column, and the year in the date display; the old Mode column has been removed
+* **Improved: Dolby Atmos retry loop —** after the initial 30-second wait, `DolbyAudioMonitor` now retries finding Steam Streaming Speakers every 5 seconds for up to 3 minutes, handling cases where the Windows Audio service is still initializing at startup (e.g. early auto-login)
 
 ## 📖 The Technical Story Behind This Project
 This project was born out of a specific frustration in the cloud gaming community. When using game streaming software like **[Moonlight](https://github.com/moonlight-stream/moonlight-qt)** with **Sunshine** or **Apollo**, a known issue occurs if the host PC and the client have mismatched Ethernet link speeds.
@@ -192,7 +195,7 @@ LogParser.FindStreamingAppInfo()
 
 ## 📝 Installation
 1. Go to the **Releases** page of this repository.
-2. Download the latest `StreamTweak_4.2.4_Installer.exe`
+2. Download the latest `StreamTweak_4.3.0_Installer.exe`
 3. Run the installer and enjoy seamless streaming.
 
 ## 🙏 Support the Project

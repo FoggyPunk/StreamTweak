@@ -33,7 +33,13 @@ namespace StreamTweak
         }
 
         [JsonIgnore]
-        public string StartTimeDisplay => StartTime.ToString("dd/MM  HH:mm");
+        public string StartTimeDisplay => StartTime.ToString("dd/MM/yyyy  HH:mm");
+
+        [JsonIgnore]
+        public string NicThrottleDisplay => string.IsNullOrEmpty(OriginalSpeed) ? "No" : "Yes";
+
+        [JsonIgnore]
+        public string OriginalNicSpeedDisplay => string.IsNullOrEmpty(OriginalSpeed) ? "N/A" : OriginalSpeed;
     }
 
     public static class SessionLogger

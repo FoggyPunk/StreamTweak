@@ -49,6 +49,9 @@ namespace StreamTweak
         private bool _hdrToggleBusy = false;
         private bool _autoHdrBusy = false;
 
+        private List<ManagedApp> _managedApps = new();
+        private string _managedAppsFilePath = string.Empty;
+
         public SettingsWindow()
         {
             InitializeComponent();
@@ -62,6 +65,7 @@ namespace StreamTweak
                 "StreamTweak");
             Directory.CreateDirectory(appFolder);
             configFilePath = Path.Combine(appFolder, "config.json");
+            _managedAppsFilePath = Path.Combine(appFolder, "managedapps.json");
 
             this.SourceInitialized += (_, _) =>
             {
@@ -75,6 +79,7 @@ namespace StreamTweak
 
             ApplySystemAccentColor();
             LoadConfig();
+            LoadManagedApps();
             LoadNetworkAdapters();
             RefreshSessionHistory();
             RefreshDolbyAccessStatusAsync();
@@ -139,11 +144,13 @@ namespace StreamTweak
             NetworkPanel.Visibility  = Visibility.Visible;
             DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Collapsed;
+            AppPanel.Visibility      = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Collapsed;
             NetworkTabButton.Style   = (Style)this.Resources["TabButtonActive"];
             DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButton"];
+            AppTabButton.Style       = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
         }
@@ -153,11 +160,13 @@ namespace StreamTweak
             NetworkPanel.Visibility  = Visibility.Collapsed;
             DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Visible;
+            AppPanel.Visibility      = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Collapsed;
             NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
             DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButtonActive"];
+            AppTabButton.Style       = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
             RefreshDolbyAccessStatusAsync();
@@ -168,11 +177,13 @@ namespace StreamTweak
             NetworkPanel.Visibility  = Visibility.Collapsed;
             DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Collapsed;
+            AppPanel.Visibility      = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Visible;
             AboutPanel.Visibility    = Visibility.Collapsed;
             NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
             DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButton"];
+            AppTabButton.Style       = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButtonActive"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
             RefreshStreamingAppInfo();
@@ -183,11 +194,13 @@ namespace StreamTweak
             NetworkPanel.Visibility  = Visibility.Collapsed;
             DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Collapsed;
+            AppPanel.Visibility      = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Visible;
             NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
             DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButton"];
+            AppTabButton.Style       = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButtonActive"];
             PopulateAboutInfo();
@@ -822,16 +835,18 @@ namespace StreamTweak
         private void DisplayTabButton_Click(object sender, RoutedEventArgs e)
         {
             NetworkPanel.Visibility = Visibility.Collapsed;
-            AudioPanel.Visibility = Visibility.Collapsed;
+            AudioPanel.Visibility   = Visibility.Collapsed;
             DisplayPanel.Visibility = Visibility.Visible;
-            LogsPanel.Visibility = Visibility.Collapsed;
-            AboutPanel.Visibility = Visibility.Collapsed;
+            AppPanel.Visibility     = Visibility.Collapsed;
+            LogsPanel.Visibility    = Visibility.Collapsed;
+            AboutPanel.Visibility   = Visibility.Collapsed;
 
             NetworkTabButton.Style = (Style)this.Resources["TabButton"];
-            AudioTabButton.Style = (Style)this.Resources["TabButton"];
+            AudioTabButton.Style   = (Style)this.Resources["TabButton"];
             DisplayTabButton.Style = (Style)this.Resources["TabButtonActive"];
-            LogsTabButton.Style = (Style)this.Resources["TabButton"];
-            AboutTabButton.Style = (Style)this.Resources["TabButton"];
+            AppTabButton.Style     = (Style)this.Resources["TabButton"];
+            LogsTabButton.Style    = (Style)this.Resources["TabButton"];
+            AboutTabButton.Style   = (Style)this.Resources["TabButton"];
 
             RefreshDisplayPanelAsync();
         }
@@ -1116,5 +1131,167 @@ namespace StreamTweak
         {
             RefreshDisplayPanelAsync();
         }
+
+        // ─── App Tab ─────────────────────────────────────────────────────────
+
+        private void AppTabButton_Click(object sender, RoutedEventArgs e)
+        {
+            NetworkPanel.Visibility  = Visibility.Collapsed;
+            DisplayPanel.Visibility  = Visibility.Collapsed;
+            AudioPanel.Visibility    = Visibility.Collapsed;
+            AppPanel.Visibility      = Visibility.Visible;
+            LogsPanel.Visibility     = Visibility.Collapsed;
+            AboutPanel.Visibility    = Visibility.Collapsed;
+            NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
+            DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
+            AudioTabButton.Style     = (Style)this.Resources["TabButton"];
+            AppTabButton.Style       = (Style)this.Resources["TabButtonActive"];
+            LogsTabButton.Style      = (Style)this.Resources["TabButton"];
+            AboutTabButton.Style     = (Style)this.Resources["TabButton"];
+        }
+
+        private void AddAppButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title  = "Seleziona eseguibile",
+                Filter = "Eseguibili (*.exe)|*.exe",
+                CheckFileExists = true
+            };
+            if (dialog.ShowDialog(this) != true) return;
+
+            string path = dialog.FileName;
+            string name = System.IO.Path.GetFileNameWithoutExtension(path);
+
+            if (_managedApps.Any(a => string.Equals(a.Path, path, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            _managedApps.Add(new ManagedApp { Name = name, Path = path });
+            SaveManagedApps();
+            RefreshManagedAppsList();
+        }
+
+        private void RemoveAppButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (ManagedAppsList.SelectedItem is not ManagedApp selected) return;
+            _managedApps.Remove(selected);
+            SaveManagedApps();
+            RefreshManagedAppsList();
+        }
+
+        private void KillAppButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (ManagedAppsList.SelectedItem is not ManagedApp selected) return;
+            string exeName = System.IO.Path.GetFileName(selected.Path);
+            try
+            {
+                bool found = ManagedAppController.KillAllByPath(selected.Path);
+                if (!found)
+                    MessageBox.Show(
+                        $"No running process found matching \"{exeName}\".\n\n" +
+                        $"The app may already be closed, or its process name may differ " +
+                        $"from the executable filename.\n\n" +
+                        $"Tip: open Task Manager → Details tab and check the exact " +
+                        $"Image Name of the app while it is running.",
+                        "End now — process not found",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not terminate \"{exeName}\":\n{ex.Message}",
+                    "End now", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private async void RestartAppButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (ManagedAppsList.SelectedItem is not ManagedApp selected) return;
+            string exeName = System.IO.Path.GetFileName(selected.Path);
+            try
+            {
+                bool found = ManagedAppController.KillAllByPath(selected.Path);
+                if (!found)
+                {
+                    MessageBox.Show(
+                        $"No running process found matching \"{exeName}\".\n\n" +
+                        $"The app may already be closed.",
+                        "Restart — process not found",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not terminate \"{exeName}\":\n{ex.Message}",
+                    "Restart", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            await Task.Delay(1500);
+
+            if (!File.Exists(selected.Path))
+            {
+                MessageBox.Show($"Executable not found:\n{selected.Path}",
+                    "Restart", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = selected.Path,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not start \"{exeName}\":\n{ex.Message}",
+                    "Restart", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void LoadManagedApps()
+        {
+            try
+            {
+                if (!File.Exists(_managedAppsFilePath)) return;
+                string json = File.ReadAllText(_managedAppsFilePath);
+                _managedApps = JsonSerializer.Deserialize<List<ManagedApp>>(json) ?? new List<ManagedApp>();
+            }
+            catch
+            {
+                _managedApps = new List<ManagedApp>();
+            }
+            RefreshManagedAppsList();
+        }
+
+        private void SaveManagedApps()
+        {
+            try
+            {
+                File.WriteAllText(_managedAppsFilePath,
+                    JsonSerializer.Serialize(_managedApps, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { }
+        }
+
+        private void AppAutoManage_Changed(object sender, RoutedEventArgs e)
+        {
+            SaveManagedApps();
+        }
+
+        private void RefreshManagedAppsList()
+        {
+            ManagedAppsList.ItemsSource = null;
+            ManagedAppsList.ItemsSource = _managedApps;
+        }
+    }
+
+    public class ManagedApp
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Path { get; set; } = string.Empty;
+        public bool AutoManage { get; set; } = true;
     }
 }

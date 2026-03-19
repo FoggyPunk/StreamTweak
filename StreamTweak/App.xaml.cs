@@ -25,9 +25,13 @@ namespace StreamTweak
 
         // Auto-monitoring
         private StreamingLogMonitor? logMonitor = null;
-        private bool isAutoStreamingActive = false;
+        private bool isAutoStreamingActive = false;   // true only when NIC has been throttled
+        private bool _isAutoSessionActive = false;    // true whenever a streaming session is being tracked
         private string? originalSpeedForAutoStreaming = null;
         private bool isAutoStreamingEnabled = true;
+
+        // Managed apps — paths of apps killed at stream start, relaunched at stream end
+        private List<string> _appsToRelaunch = new();
 
         // Dolby audio monitoring
         private readonly DolbyAudioMonitor _dolbyMonitor = new();
@@ -330,6 +334,7 @@ namespace StreamTweak
 
                 isStreamingModeActive = true;
                 SaveStreamingStateToConfig(true, originalSpeedForStreaming);
+                _appsToRelaunch = ManagedAppController.KillRunning();
                 SessionLogger.StartSession("Manual", originalSpeedForStreaming);
                 ApplySpeed(oneGbpsKey);
                 await PollForIconUpdate(true);
@@ -340,6 +345,8 @@ namespace StreamTweak
                     ApplySpeed(originalSpeedForStreaming);
 
                 SessionLogger.EndSession("User");
+                ManagedAppController.StartApps(_appsToRelaunch);
+                _appsToRelaunch.Clear();
                 isStreamingModeActive = false;
                 SaveStreamingStateToConfig(false, string.Empty);
                 await PollForIconUpdate(true);
@@ -575,7 +582,7 @@ namespace StreamTweak
                     if (e.Event == LogParser.StreamingEvent.StreamStarted)
                     {
                         _dolbyMonitor.OnStreamingStarted();
-                        if (!isAutoStreamingActive)
+                        if (!isAutoStreamingActive && !_isAutoSessionActive)
                             HandleAutoStreamStart();
                         else
                             StopInactivityTimer(); // reconnected within grace period
@@ -583,7 +590,7 @@ namespace StreamTweak
                     else if (e.Event == LogParser.StreamingEvent.StreamStopped)
                     {
                         _dolbyMonitor.OnStreamingStopped();
-                        if (isAutoStreamingActive)
+                        if (isAutoStreamingActive || _isAutoSessionActive)
                             StartInactivityTimer(); // start grace period — wait for possible reconnect
                     }
                 });
@@ -595,7 +602,6 @@ namespace StreamTweak
         {
             try
             {
-                if (!isAutoStreamingEnabled) return;
                 if (isStreamingModeActive) return;
 
                 var ni = NetworkInterface.GetAllNetworkInterfaces()
@@ -604,41 +610,54 @@ namespace StreamTweak
                 if (ni == null || ni.OperationalStatus != OperationalStatus.Up) return;
 
                 long mbps = ni.Speed / 1_000_000;
-                if (mbps < 1200) return; // Already at or below 1 Gbps — nothing to do
+                bool needsThrottle = isAutoStreamingEnabled && mbps >= 1200;
+                string capturedOriginalSpeed = string.Empty;
 
-                // Capture original speed
-                var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
-                foreach (var kvp in speeds)
+                if (needsThrottle)
                 {
-                    string kl = kvp.Key.ToLower();
-                    bool match = mbps >= 2000
-                        ? kl.Contains("2.5") || kl.Contains("2500")
-                        : kl.Contains(mbps.ToString());
-                    if (match) { originalSpeedForAutoStreaming = kvp.Key; break; }
+                    // Capture original speed key
+                    var speeds = NetworkManager.GetSupportedSpeeds(adapterName);
+                    foreach (var kvp in speeds)
+                    {
+                        string kl = kvp.Key.ToLower();
+                        bool match = mbps >= 2000
+                            ? kl.Contains("2.5") || kl.Contains("2500")
+                            : kl.Contains(mbps.ToString());
+                        if (match) { capturedOriginalSpeed = kvp.Key; break; }
+                    }
+
+                    string? oneGbpsKey = Find1GbpsKey();
+                    if (oneGbpsKey == null)
+                    {
+                        needsThrottle = false; // no suitable 1G key — log session without throttle
+                    }
+                    else
+                    {
+                        var alert = new StreamingAdjustmentAlert();
+                        alert.Show();
+                        await Task.Delay(7900);
+
+                        if (!isAutoStreamingEnabled) { alert.Close(); return; }
+
+                        isAutoStreamingActive = true;
+                        isStreamingModeActive = true;
+                        originalSpeedForAutoStreaming = capturedOriginalSpeed;
+                        ApplySpeed(oneGbpsKey);
+                        SaveStreamingStateToConfig(true, capturedOriginalSpeed);
+                        UpdateTrayMenu();
+                        await PollForIconUpdate(false);
+
+                        ToastHelper.Show("Streaming Detected",
+                            "Network speed set to 1 Gbps. Reconnect within 30 seconds.");
+
+                        settingsWindow?.SyncStreamingState(true, capturedOriginalSpeed);
+                    }
                 }
 
-                string? oneGbpsKey = Find1GbpsKey();
-                if (oneGbpsKey == null) return;
-
-                var alert = new StreamingAdjustmentAlert();
-                alert.Show();
-                await Task.Delay(7900);
-
-                if (!isAutoStreamingEnabled) { alert.Close(); return; }
-
-                isAutoStreamingActive = true;
-                isStreamingModeActive = true;
-                ApplySpeed(oneGbpsKey);
-                SaveStreamingStateToConfig(true, originalSpeedForAutoStreaming ?? string.Empty);
-                SessionLogger.StartSession("Auto", originalSpeedForAutoStreaming ?? string.Empty);
-
-                UpdateTrayMenu();
-                await PollForIconUpdate(false);
-
-                ToastHelper.Show("Streaming Detected",
-                    "Network speed set to 1 Gbps. Reconnect within 30 seconds.");
-
-                settingsWindow?.SyncStreamingState(true, originalSpeedForAutoStreaming ?? string.Empty);
+                // Always log the session, with or without NIC throttle
+                _appsToRelaunch = ManagedAppController.KillRunning();
+                _isAutoSessionActive = true;
+                SessionLogger.StartSession("Auto", capturedOriginalSpeed);
                 settingsWindow?.RefreshSessionHistory();
             }
             catch { }
@@ -648,28 +667,38 @@ namespace StreamTweak
         {
             try
             {
-                if (!isAutoStreamingActive) return;
-
-                if (!string.IsNullOrEmpty(originalSpeedForAutoStreaming))
-                    ApplySpeed(originalSpeedForAutoStreaming);
-
-                SessionLogger.EndSession(endReason);
-                isAutoStreamingActive = false;
-                isStreamingModeActive = false;
-                originalSpeedForAutoStreaming = null;
+                if (!isAutoStreamingActive && !_isAutoSessionActive) return;
 
                 StopInactivityTimer();
-                UpdateTrayMenu();
-                await PollForIconUpdate(false);
-                SaveStreamingStateToConfig(false, string.Empty);
 
-                string toastBody = endReason == "Disconnected"
-                    ? "Connection lost. Network speed restored."
-                    : "Network speed restored to original.";
-                ToastHelper.Show("Streaming Ended", toastBody);
+                if (isAutoStreamingActive)
+                {
+                    if (!string.IsNullOrEmpty(originalSpeedForAutoStreaming))
+                        ApplySpeed(originalSpeedForAutoStreaming);
 
-                settingsWindow?.SyncStreamingState(false, string.Empty);
-                settingsWindow?.RefreshSessionHistory();
+                    isAutoStreamingActive = false;
+                    isStreamingModeActive = false;
+                    originalSpeedForAutoStreaming = null;
+                    SaveStreamingStateToConfig(false, string.Empty);
+                    UpdateTrayMenu();
+                    await PollForIconUpdate(false);
+
+                    string toastBody = endReason == "Disconnected"
+                        ? "Connection lost. Network speed restored."
+                        : "Network speed restored to original.";
+                    ToastHelper.Show("Streaming Ended", toastBody);
+
+                    settingsWindow?.SyncStreamingState(false, string.Empty);
+                }
+
+                if (_isAutoSessionActive)
+                {
+                    SessionLogger.EndSession(endReason);
+                    ManagedAppController.StartApps(_appsToRelaunch);
+                    _appsToRelaunch.Clear();
+                    _isAutoSessionActive = false;
+                    settingsWindow?.RefreshSessionHistory();
+                }
             }
             catch { }
         }
@@ -685,8 +714,8 @@ namespace StreamTweak
                 inactivityTimer.Tick += (s, e) =>
                 {
                     StopInactivityTimer();
-                    DebugLog("Inactivity timer expired — restoring NIC speed");
-                    if (isAutoStreamingActive)
+                    DebugLog("Inactivity timer expired");
+                    if (isAutoStreamingActive || _isAutoSessionActive)
                         HandleAutoStreamStop("Disconnected");
                 };
             }
@@ -752,6 +781,7 @@ namespace StreamTweak
                     isAutoStreamingActive = true;
                     isStreamingModeActive = true;
                     SaveStreamingStateToConfig(true, originalSpeedForAutoStreaming ?? string.Empty);
+                    _appsToRelaunch = ManagedAppController.KillRunning();
                     SessionLogger.StartSession("Bridge", originalSpeedForAutoStreaming ?? string.Empty);
                     StartInactivityTimer(); // auto-RESTORE if no client connects within 30s
                     UpdateTrayMenu();

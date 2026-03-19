@@ -11,7 +11,9 @@ namespace StreamTweak
     internal sealed class DolbyAudioMonitor
     {
         private const string SteamSpeakersName = "Steam Streaming Speakers";
-        private const int WaitSeconds = 30;
+        private const int WaitSeconds        = 30;
+        private const int RetryIntervalSec   = 5;
+        private const int MaxRetryAttempts   = 36; // 36 × 5 s = 3 min of retrying after the initial 30 s wait
 
         private CancellationTokenSource? _cts;
         private bool _activatedThisSession;
@@ -71,14 +73,30 @@ namespace StreamTweak
                 await Task.Delay(TimeSpan.FromSeconds(WaitSeconds), token);
                 if (token.IsCancellationRequested) return;
 
-                string? deviceId = await FindSteamSpeakersDeviceIdAsync();
-                if (deviceId == null)
+                // Retry loop — handles the case where the Windows Audio service is still
+                // initializing when StreamTweak starts (e.g. early auto-login).
+                // Only "device not found" is retried; permanent failures (Dolby not
+                // installed, spatial audio not supported) exit immediately.
+                for (int attempt = 1; !token.IsCancellationRequested; attempt++)
                 {
-                    NotifyStatus("Steam Streaming Speakers not found.");
-                    return;
-                }
+                    string? deviceId = await FindSteamSpeakersDeviceIdAsync();
 
-                await TryEnableDolbyAtmosAsync(deviceId);
+                    if (deviceId != null)
+                    {
+                        // Device found — attempt activation and exit regardless of outcome
+                        await TryEnableDolbyAtmosAsync(deviceId);
+                        return;
+                    }
+
+                    if (attempt >= MaxRetryAttempts)
+                    {
+                        NotifyStatus("Steam Streaming Speakers not found.");
+                        return;
+                    }
+
+                    NotifyStatus($"Audio not ready — retrying in {RetryIntervalSec}s… ({attempt}/{MaxRetryAttempts})");
+                    await Task.Delay(TimeSpan.FromSeconds(RetryIntervalSec), token);
+                }
             }
             catch (OperationCanceledException) { }
             catch { }

@@ -4,6 +4,18 @@ StreamTweak - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamTweak
 
+Version 4.3.0 - The "App Manager Update" (19/03/2026)
+------------------------------------------
+
+✨ NEW FEATURES:
+• Streaming App Manager: a user-configurable list of executables that StreamTweak automatically terminates when a streaming session starts and relaunches when it ends — ideal for apps like Hue Sync that conflict when running on both host and client simultaneously; each entry has an independent AutoManage toggle so individual apps can be excluded from automation while staying in the list
+• App Manager manual controls: each listed app can also be killed or restarted on demand from the Apps tab, without waiting for a streaming session to trigger the automation
+
+🔧 IMPROVEMENTS:
+• Session logging now tracks all streaming sessions regardless of whether NIC throttle was applied: previously only sessions that triggered a speed change were logged; now every session is recorded with a NIC Throttle column (Yes/No) and an Original NIC Speed column; the old Mode column has been removed
+• Session date format now includes the year (dd/MM/yyyy) for unambiguous historical records
+• Dolby Atmos retry loop: after the initial 30-second wait, DolbyAudioMonitor now retries device discovery every 5 seconds for up to 3 minutes — handles the case where the Windows Audio service is still initializing when StreamTweak starts on an early auto-login
+
 Version 4.2.4 - The "Under the Hood Update" (18/03/2026)
 ------------------------------------------
 
