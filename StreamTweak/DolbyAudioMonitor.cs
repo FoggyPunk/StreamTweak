@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,21 +9,27 @@ using Windows.Media.Devices;
 
 namespace StreamTweak
 {
+    public enum SpatialAudioFormat { DolbyAtmos, WindowsSonic }
+
     internal sealed class DolbyAudioMonitor
     {
-        private const string SteamSpeakersName = "Steam Streaming Speakers";
-        private const int WaitSeconds        = 30;
-        private const int RetryIntervalSec   = 5;
-        private const int MaxRetryAttempts   = 36; // 36 × 5 s = 3 min of retrying after the initial 30 s wait
+        private const int WaitSeconds      = 30;
+        private const int RetryIntervalSec = 5;
+        private const int MaxRetryAttempts = 36; // 36 × 5 s = 3 min of retrying after the initial 30 s wait
 
         private CancellationTokenSource? _cts;
         private bool _activatedThisSession;
+
+        // ─── Configuration ────────────────────────────────────────────────────
+
+        public string TargetDeviceName { get; set; } = "Steam Streaming Speakers";
+        public SpatialAudioFormat SpatialFormat { get; set; } = SpatialAudioFormat.DolbyAtmos;
 
         public bool IsEnabled { get; private set; }
 
         public event Action<string>? StatusChanged;
 
-        // ─── Lifecycle ───────────────────────────────────────────────────────
+        // ─── Lifecycle ────────────────────────────────────────────────────────
 
         public void Enable()
         {
@@ -39,14 +46,14 @@ namespace StreamTweak
             NotifyStatus("Disabled.");
         }
 
-        // ─── Streaming events (called by App.xaml.cs) ────────────────────────
+        // ─── Streaming events (called by App.xaml.cs) ─────────────────────────
 
         public void OnStreamingStarted()
         {
             if (!IsEnabled || _activatedThisSession) return;
             _cts?.Cancel();
             _cts = new CancellationTokenSource();
-            _ = Task.Run(() => DelayedEnableDolbyAsync(_cts.Token));
+            _ = Task.Run(() => DelayedEnableSpatialAudioAsync(_cts.Token));
             NotifyStatus($"Stream detected — waiting {WaitSeconds}s…");
         }
 
@@ -64,9 +71,9 @@ namespace StreamTweak
             _cts = null;
         }
 
-        // ─── Delayed activation ──────────────────────────────────────────────
+        // ─── Delayed activation ───────────────────────────────────────────────
 
-        private async Task DelayedEnableDolbyAsync(CancellationToken token)
+        private async Task DelayedEnableSpatialAudioAsync(CancellationToken token)
         {
             try
             {
@@ -75,22 +82,20 @@ namespace StreamTweak
 
                 // Retry loop — handles the case where the Windows Audio service is still
                 // initializing when StreamTweak starts (e.g. early auto-login).
-                // Only "device not found" is retried; permanent failures (Dolby not
-                // installed, spatial audio not supported) exit immediately.
+                // Only "device not found" is retried; permanent failures exit immediately.
                 for (int attempt = 1; !token.IsCancellationRequested; attempt++)
                 {
-                    string? deviceId = await FindSteamSpeakersDeviceIdAsync();
+                    string? deviceId = await FindDeviceIdByNameAsync(TargetDeviceName);
 
                     if (deviceId != null)
                     {
-                        // Device found — attempt activation and exit regardless of outcome
-                        await TryEnableDolbyAtmosAsync(deviceId);
+                        await TryEnableSpatialAudioAsync(deviceId);
                         return;
                     }
 
                     if (attempt >= MaxRetryAttempts)
                     {
-                        NotifyStatus("Steam Streaming Speakers not found.");
+                        NotifyStatus($"Audio device '{TargetDeviceName}' not found.");
                         return;
                     }
 
@@ -102,53 +107,62 @@ namespace StreamTweak
             catch { }
         }
 
-        // ─── Device discovery ────────────────────────────────────────────────
+        // ─── Device discovery ─────────────────────────────────────────────────
 
-        private static async Task<string?> FindSteamSpeakersDeviceIdAsync()
+        private static async Task<string?> FindDeviceIdByNameAsync(string deviceName)
         {
             try
             {
                 string selector = MediaDevice.GetAudioRenderSelector();
                 var devices = await DeviceInformation.FindAllAsync(selector);
                 var match = devices.FirstOrDefault(d =>
-                    d.Name.Contains(SteamSpeakersName, StringComparison.OrdinalIgnoreCase));
+                    d.Name.Contains(deviceName, StringComparison.OrdinalIgnoreCase));
                 return match?.Id;
             }
             catch { return null; }
         }
 
-        // ─── Dolby Atmos activation ──────────────────────────────────────────
+        // ─── Spatial audio activation ─────────────────────────────────────────
 
-        private async Task TryEnableDolbyAtmosAsync(string deviceId)
+        // Windows Sonic for Headphones is Microsoft's built-in format and has no constant
+        // in SpatialAudioFormatSubtype (which only lists third-party formats).
+        // Windows Sonic is active when ActiveSpatialAudioFormat is empty/null.
+        // Switching back to Windows Sonic is achieved by passing string.Empty to
+        // SetDefaultSpatialAudioFormatAsync, which resets to the OS default.
+
+        private async Task TryEnableSpatialAudioAsync(string deviceId)
         {
             try
             {
-                string dolbyFormat = SpatialAudioFormatSubtype.DolbyAtmosForHeadphones;
                 var config = SpatialAudioDeviceConfiguration.GetForDeviceId(deviceId);
 
                 if (!config.IsSpatialAudioSupported)
                 {
-                    NotifyStatus("Spatial audio not supported for Steam Streaming Speakers.");
+                    NotifyStatus("Spatial audio not supported on the selected output device.");
                     return;
                 }
 
-                if (!config.IsSpatialAudioFormatSupported(dolbyFormat))
+                if (SpatialFormat == SpatialAudioFormat.WindowsSonic)
                 {
-                    NotifyStatus("Dolby Atmos for Headphones not available (Dolby Access not installed).");
-                    return;
-                }
-
-                if (config.ActiveSpatialAudioFormat
-                        .Equals(dolbyFormat, StringComparison.OrdinalIgnoreCase))
-                {
+                    // Reset to OS default (Windows Sonic) by clearing the active format
+                    await config.SetDefaultSpatialAudioFormatAsync(string.Empty);
                     _activatedThisSession = true;
-                    NotifyStatus("✓ Dolby Atmos for Headphones already active.");
-                    return;
+                    NotifyStatus("✓ Windows Sonic for Headphones enabled.");
                 }
+                else
+                {
+                    string dolbyFormat = SpatialAudioFormatSubtype.DolbyAtmosForHeadphones;
 
-                await config.SetDefaultSpatialAudioFormatAsync(dolbyFormat);
-                _activatedThisSession = true;
-                NotifyStatus("✓ Dolby Atmos for Headphones enabled.");
+                    if (!config.IsSpatialAudioFormatSupported(dolbyFormat))
+                    {
+                        NotifyStatus("Dolby Atmos for Headphones not available (Dolby Access not installed).");
+                        return;
+                    }
+
+                    await config.SetDefaultSpatialAudioFormatAsync(dolbyFormat);
+                    _activatedThisSession = true;
+                    NotifyStatus("✓ Dolby Atmos for Headphones enabled.");
+                }
             }
             catch (Exception ex)
             {
@@ -156,7 +170,42 @@ namespace StreamTweak
             }
         }
 
-        // ─── Dolby Atmos for Headphones availability check (via Spatial Audio API) ─
+        // ─── Static query methods ─────────────────────────────────────────────
+
+        public static async Task<List<string>> GetAudioOutputDevicesAsync()
+        {
+            try
+            {
+                string selector = MediaDevice.GetAudioRenderSelector();
+                var devices = await DeviceInformation.FindAllAsync(selector);
+                return devices.Select(d => d.Name).ToList();
+            }
+            catch { return new List<string>(); }
+        }
+
+        public static async Task<(bool dolby, bool sonic)> GetSpatialAudioCapabilitiesAsync(string deviceName)
+        {
+            try
+            {
+                string selector = MediaDevice.GetAudioRenderSelector();
+                var devices = await DeviceInformation.FindAllAsync(selector);
+                var device = devices.FirstOrDefault(d =>
+                    d.Name.Contains(deviceName, StringComparison.OrdinalIgnoreCase));
+
+                if (device == null) return (false, false);
+
+                var config = SpatialAudioDeviceConfiguration.GetForDeviceId(device.Id);
+                if (!config.IsSpatialAudioSupported) return (false, false);
+
+                bool dolby = config.IsSpatialAudioFormatSupported(SpatialAudioFormatSubtype.DolbyAtmosForHeadphones);
+                // Windows Sonic is Microsoft's built-in format: available whenever spatial audio is supported
+                bool sonic = config.IsSpatialAudioSupported;
+                return (dolby, sonic);
+            }
+            catch { return (false, false); }
+        }
+
+        // ─── Legacy compatibility (kept for existing callers) ─────────────────
 
         public static async Task<bool> IsDolbyAtmosAvailableAsync()
         {

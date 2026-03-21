@@ -16,7 +16,7 @@
                     <MenuItem x:Name="StreamingModeMenuItem" Header="Start Streaming Mode" Click="MenuStreamingMode_Click"/>
                     <MenuItem x:Name="AutoModeMenuItem"      Header="Auto Mode: Enabled"
                               IsCheckable="True" IsChecked="True" Click="MenuAutoMode_Click"/>
-                    <MenuItem x:Name="DolbyModeMenuItem"     Header="Dolby Atmos: Disabled"
+                    <MenuItem x:Name="DolbyModeMenuItem"     Header="Spatial Audio: Disabled"
                               IsCheckable="True" IsChecked="False" Click="MenuDolbyMode_Click"/>
                     <MenuItem x:Name="HdrModeMenuItem"       Header="HDR: Off"
                               IsCheckable="True" IsChecked="False" Click="MenuHdrMode_Click"/>

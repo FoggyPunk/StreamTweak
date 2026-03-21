@@ -21,9 +21,10 @@ namespace StreamTweak
     /// Each connection is short-lived: client sends one line, server replies "OK",
     /// the speed string, or "ERR".
     /// 
-    /// Wire up StatusProvider and StatsProvider in App.xaml.cs after _bridge.Start():
-    ///   _bridge.StatusProvider = () => GetCurrentLinkSpeedMbps().ToString();
-    ///   _bridge.StatsProvider  = () => _metricsCollector.GetLatestSample().ToJson();
+    /// Wire up StatusProvider, StatsProvider and AppStoresProvider in App.xaml.cs after _bridge.Start():
+    ///   _bridge.StatusProvider     = () => GetCurrentLinkSpeedMbps().ToString();
+    ///   _bridge.StatsProvider      = () => _metricsCollector.GetLatestSample().ToJson();
+    ///   _bridge.AppStoresProvider  = () => GameLibraryState.Current.ToAppStoresJson();
     /// </summary>
     public sealed class StreamTweakBridge : IDisposable
     {
@@ -43,6 +44,14 @@ namespace StreamTweak
         /// Set this in App.xaml.cs after creating the bridge.
         /// </summary>
         public Func<string>? StatsProvider { get; set; }
+
+        /// <summary>
+        /// Optional delegate that returns a JSON object {"Game Name": "Store", ...}
+        /// for all games currently synced to Sunshine by the Game Library feature.
+        /// Called when an APPSTORES command arrives. Returns "{}" if no games are synced.
+        /// Set this in App.xaml.cs after creating the bridge.
+        /// </summary>
+        public Func<string>? AppStoresProvider { get; set; }
 
         private TcpListener? _listener;
         private CancellationTokenSource? _cts;
@@ -139,6 +148,11 @@ namespace StreamTweak
                         case "STATS":
                             string stats = StatsProvider?.Invoke() ?? "STATS_UNAVAILABLE";
                             await writer.WriteLineAsync(stats);
+                            break;
+
+                        case "APPSTORES":
+                            string appStores = AppStoresProvider?.Invoke() ?? "{}";
+                            await writer.WriteLineAsync(appStores);
                             break;
 
                         default:

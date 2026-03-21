@@ -27,8 +27,39 @@ namespace StreamTweak
 
                 string json = JsonSerializer.Serialize(new
                 {
+                    Command = "SetSpeed",
                     AdapterName = adapterName,
                     RegistryValue = registryValue
+                });
+
+                writer.WriteLine(json);
+
+                string? response = reader.ReadLine();
+                return response == "OK";
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// Asks the StreamTweakService (LocalSystem) to write content to an apps.json path
+        /// that may be inside a protected directory (e.g. C:\Program Files\Sunshine\config\).
+        /// Returns true on success; false if the service is unavailable or the write fails.
+        /// </summary>
+        public static bool WriteAppsJson(string path, string jsonContent)
+        {
+            try
+            {
+                using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut);
+                client.Connect(PipeTimeoutMs);
+
+                using var writer = new StreamWriter(client, leaveOpen: true) { AutoFlush = true };
+                using var reader = new StreamReader(client, leaveOpen: true);
+
+                string json = JsonSerializer.Serialize(new
+                {
+                    Command = "WriteFile",
+                    Path    = path,
+                    Content = jsonContent
                 });
 
                 writer.WriteLine(json);

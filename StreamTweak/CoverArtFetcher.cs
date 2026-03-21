@@ -1,0 +1,139 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Media.Imaging;
+
+namespace StreamTweak
+{
+    /// <summary>
+    /// Downloads and caches game cover art images.
+    /// Currently supports Steam (library_600x900.jpg from Cloudflare CDN).
+    /// Cover art is cached in %LOCALAPPDATA%\StreamTweak\covers\.
+    /// </summary>
+    public static class CoverArtFetcher
+    {
+        private static readonly HttpClient _http = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(10)
+        };
+
+        // ── Public API ────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Downloads missing cover art for all games in parallel (up to 5 concurrent).
+        /// Already-cached images are skipped. Failures are silently ignored.
+        /// </summary>
+        public static async Task FetchAllAsync(IEnumerable<DiscoveredGame> games, string cacheDir)
+        {
+            Directory.CreateDirectory(cacheDir);
+
+            var toFetch = games.Where(g => GetDownloadUrl(g) != null && GetCachedPath(g, cacheDir) == null).ToList();
+            if (toFetch.Count == 0) return;
+
+            using var semaphore = new SemaphoreSlim(5);
+            var tasks = toFetch.Select(g => FetchOneAsync(g, cacheDir, semaphore));
+            await Task.WhenAll(tasks);
+        }
+
+        /// <summary>
+        /// Returns the expected cache file path for a game regardless of whether it exists yet.
+        /// Returns null for games with no deterministic filename (e.g., empty name).
+        /// </summary>
+        public static string? GetCacheFilePath(DiscoveredGame game, string cacheDir)
+        {
+            string? fileName = GetCacheFileName(game);
+            return fileName == null ? null : Path.Combine(cacheDir, fileName);
+        }
+
+        /// <summary>
+        /// Returns the full path to the cached cover image for a game, or null if not yet cached.
+        /// </summary>
+        public static string? GetCachedPath(DiscoveredGame game, string cacheDir)
+        {
+            string? path = GetCacheFilePath(game, cacheDir);
+            return (path != null && File.Exists(path)) ? path : null;
+        }
+
+        // ── Internals ─────────────────────────────────────────────────────────
+
+        private static async Task FetchOneAsync(DiscoveredGame game, string cacheDir, SemaphoreSlim semaphore)
+        {
+            await semaphore.WaitAsync();
+            try
+            {
+                string? url = GetDownloadUrl(game);
+                if (url == null) return;
+
+                string? fileName = GetCacheFileName(game);
+                if (fileName == null) return;
+
+                string cachePath = Path.Combine(cacheDir, fileName);
+                if (File.Exists(cachePath)) return; // already cached
+
+                byte[] bytes = await _http.GetByteArrayAsync(url);
+
+                // Sunshine/Vibeshine requires PNG for image-path.
+                // Steam CDN delivers JPEG → decode and re-encode as PNG.
+                using var jpegStream = new MemoryStream(bytes);
+                var decoder = BitmapDecoder.Create(
+                    jpegStream,
+                    BitmapCreateOptions.None,
+                    BitmapCacheOption.OnLoad);
+                var frame = decoder.Frames[0];
+
+                using var pngStream = new FileStream(cachePath, FileMode.Create, FileAccess.Write);
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(frame));
+                encoder.Save(pngStream);
+            }
+            catch { /* silently skip on network/IO errors */ }
+            finally
+            {
+                semaphore.Release();
+            }
+        }
+
+        private static string? GetDownloadUrl(DiscoveredGame game)
+        {
+            // Prefer API-provided URL from IStoreBrowseService (exact, always correct)
+            if (!string.IsNullOrEmpty(game.CoverUrl))
+                return game.CoverUrl;
+
+            // Legacy CDN fallback for Steam games without an API-provided URL
+            return game.Store switch
+            {
+                "Steam" when game.SteamAppId != null =>
+                    $"https://cdn.cloudflare.steamstatic.com/steam/apps/{game.SteamAppId}/library_600x900.jpg",
+                _ => null
+            };
+        }
+
+        private static string? GetCacheFileName(DiscoveredGame game)
+        {
+            if (game.SteamAppId != null)
+                return $"steam_{game.SteamAppId}.png";
+
+            string store = game.Store.Replace(" ", "").ToLowerInvariant();
+
+            // Non-Steam: prefer StoreId (stable, deterministic) over sanitized name
+            if (game.StoreId != null)
+            {
+                string safeId = new string(game.StoreId
+                    .Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.')
+                    .ToArray());
+                if (!string.IsNullOrEmpty(safeId))
+                    return $"{store}_{safeId}.png";
+            }
+
+            // Fallback: sanitized name
+            string safe = new string(game.Name
+                .Where(c => char.IsLetterOrDigit(c) || c == '-')
+                .ToArray());
+            return string.IsNullOrEmpty(safe) ? null : $"{store}_{safe}.png";
+        }
+    }
+}

@@ -4,6 +4,50 @@ StreamTweak - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamTweak
 
+Version 5.0.0 - The "Game Library Update" (21/03/2026)
+------------------------------------------
+
+✨ NEW FEATURES:
+• New FoggyBytes icon: StreamTweak now sports a new icon that visually unifies the FoggyBytes suite — the same icon is shared with StreamLight for a consistent identity across both apps
+• Game Library Sync: StreamTweak automatically discovers installed games across Steam, Epic Games, GOG, Ubisoft Connect, Xbox App, EA App, and Battle.net — and syncs them to Sunshine (and compatible forks: Apollo, Vibeshine, Vibepollo) without touching manually created entries; uninstalled games are removed on the next sync
+• Cover art from native sources: cover images are fetched from each store's own CDN (Steam CDN, Epic metadata, GOG API, Battle.net aggregate.json) and cached locally as PNG — Sunshine displays them natively; no third-party service involved
+• Battle.net integration: Battle.net games are detected via the local aggregate.json file; all entries launch via the Battle.net client (Battle.net.exe), so any installed game is automatically included without needing per-game exe paths
+• Manual game management: use the Add button in the Games tab to include any executable not auto-detected; manual entries survive re-syncs and are removed individually with the − button per row
+• APPSTORES TCP command: StreamTweak serves the game→store map to StreamLight via the new APPSTORES command on port 47998, enabling per-game store badge display in the StreamLight client
+
+🔧 IMPROVEMENTS:
+• Game list sorted alphabetically after each sync for a consistent, predictable order
+• Manual games persist across re-syncs: only auto-discovered games are refreshed; manually added entries are preserved until explicitly removed
+• Single-entry Sunshine sync: adding or removing a manual game updates only that entry in apps.json — no other entries are touched; compatible with apps created outside StreamTweak
+
+⚠️ REQUIRES: StreamLight 2.0.0 or later for store badge display in the client.
+
+Version 4.5.0 - The "Interface Update" (20/03/2026)
+------------------------------------------
+
+🎨 UI OVERHAUL:
+• Solid dark background: removed the Mica system backdrop (which was not rendering correctly on all systems) and replaced it with a reliable solid #202020 background throughout the window
+• Sidebar colour: sidebar background now matches the title bar (#202020), eliminating the previous slight contrast mismatch
+• Custom close button: added a dedicated close button in the title bar (with Windows-standard red hover), replacing the previously invisible DWM system button
+• Active tab highlight: the selected sidebar tab is now highlighted with a solid #BE5438 background instead of the previous semi-transparent tint
+• Tab hover: inactive sidebar tabs now show a warm #3C2924 hover colour consistent with the accent palette
+• Sidebar separator removed: the 1 px border between the sidebar and the content area has been removed for a cleaner layout
+
+🔧 IMPROVEMENTS:
+• Stream host indicator moved to sidebar: the streaming server name (Sunshine, Apollo, Vibeshine, Vibepollo) is now shown persistently in the bottom of the sidebar — visible at all times regardless of which tab is active, rather than only in the Display tab footer; the indicator is populated at startup without requiring any tab interaction
+• Stream host always shown: when no streaming software is detected the sidebar shows "N/A" rather than hiding the section entirely
+• Display tab: removed the redundant stream host label from the panel footer; Auto HDR section spacing increased for better visual separation
+• Logs tab — NIC Throttle and Original NIC Speed values are now displayed in bold for faster readability
+• Logs tab — stream host log folder box simplified: icon removed, app name and path are now centred
+• Session indicator dot in the sidebar is now green (matching the audio availability indicators) when a streaming session is active
+
+🎧 AUDIO TAB REDESIGN:
+• Output device selector: the Audio tab now enumerates all audio render devices on the host PC and lets you choose which one to target; Steam Streaming Speakers is pre-selected by default when present
+• Windows Sonic for Headphones: added as an alternative to Dolby Atmos; since it is built into Windows 10 and later, it is always available without any additional app; select it via the new radio-button format selector
+• Availability indicators: both Dolby Atmos for Headphones and Windows Sonic for Headphones show a live green/red status dot for the selected output device
+• Format-agnostic toggle: the "Auto Dolby Atmos" toggle is now "Auto spatial audio" — it activates whichever format is selected (Dolby or Windows Sonic) on whichever output device is chosen
+• Tray menu entry renamed from "Dolby Atmos" to "Spatial Audio" to reflect the broader scope
+
 Version 4.4.0 - The "Telemetry Update" (20/03/2026)
 ------------------------------------------
 

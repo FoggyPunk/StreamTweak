@@ -33,9 +33,11 @@ namespace StreamTweak
         // Managed apps — paths of apps killed at stream start, relaunched at stream end
         private List<string> _appsToRelaunch = new();
 
-        // Dolby audio monitoring
+        // Spatial audio monitoring
         private readonly DolbyAudioMonitor _dolbyMonitor = new();
         private bool isAudioMonitorEnabled = false;
+        private string _audioOutputDevice = "Steam Streaming Speakers";
+        private SpatialAudioFormat _audioSpatialFormat = SpatialAudioFormat.DolbyAtmos;
 
         // HDR tray state
         private bool _trayHdrEnabled = false;
@@ -85,7 +87,12 @@ namespace StreamTweak
                 var (mbps, connected) = GetCurrentSpeed();
                 return connected ? mbps.ToString() : "UNKNOWN";
             };
-            _bridge.StatsProvider = () => _metricsCollector.GetLatestSample().ToJson();
+            _bridge.StatsProvider      = () => _metricsCollector.GetLatestSample().ToJson();
+            _bridge.AppStoresProvider  = () => GameLibraryState.Current.ToAppStoresJson();
+
+            // Auto-sync game library in background if enabled
+            if (GameLibraryState.Current.SyncEnabled)
+                _ = GameLibraryService.PerformSyncAsync();
         }
 
         private void LoadConfig()
@@ -115,8 +122,19 @@ namespace StreamTweak
 
                 if (root.TryGetProperty("AudioMonitorEnabled", out var audioEl))
                     isAudioMonitorEnabled = audioEl.GetBoolean();
+
+                if (root.TryGetProperty("AudioOutputDevice", out var devEl))
+                    _audioOutputDevice = devEl.GetString() ?? "Steam Streaming Speakers";
+
+                if (root.TryGetProperty("AudioSpatialFormat", out var fmtEl))
+                    _audioSpatialFormat = fmtEl.GetString() == "WindowsSonic"
+                        ? SpatialAudioFormat.WindowsSonic
+                        : SpatialAudioFormat.DolbyAtmos;
             }
             catch { }
+
+            _dolbyMonitor.TargetDeviceName = _audioOutputDevice;
+            _dolbyMonitor.SpatialFormat    = _audioSpatialFormat;
         }
 
         private bool IsCurrentSpeed1G()
@@ -223,8 +241,8 @@ namespace StreamTweak
             {
                 DolbyModeMenuItem.IsChecked = isAudioMonitorEnabled;
                 DolbyModeMenuItem.Header = isAudioMonitorEnabled
-                    ? "Dolby Atmos: Enabled"
-                    : "Dolby Atmos: Disabled";
+                    ? "Spatial Audio: Enabled"
+                    : "Spatial Audio: Disabled";
             }
 
             if (HdrModeMenuItem != null)
@@ -505,6 +523,18 @@ namespace StreamTweak
                     UpdateTrayMenu();
                 };
 
+                settingsWindow.AudioDeviceChanged += (s, args) =>
+                {
+                    _audioOutputDevice = settingsWindow.SelectedAudioDevice;
+                    _dolbyMonitor.TargetDeviceName = _audioOutputDevice;
+                };
+
+                settingsWindow.AudioFormatChanged += (s, args) =>
+                {
+                    _audioSpatialFormat = settingsWindow.SelectedAudioFormat;
+                    _dolbyMonitor.SpatialFormat = _audioSpatialFormat;
+                };
+
                 settingsWindow.Closed += (s, args) =>
                 {
                     LoadConfig();
@@ -514,7 +544,7 @@ namespace StreamTweak
 
                 settingsWindow.SyncAudioMonitorState(isAudioMonitorEnabled);
                 settingsWindow.SyncDolbyMonitorStatus(
-                    _dolbyMonitor.IsEnabled ? "Monitoring for Steam Streaming Speakers…" : "Disabled.");
+                    _dolbyMonitor.IsEnabled ? "Ready — waiting for next stream…" : "Disabled.");
 
                 settingsWindow.Show();
             }
@@ -664,6 +694,7 @@ namespace StreamTweak
                 _isAutoSessionActive = true;
                 SessionLogger.StartSession("Auto", capturedOriginalSpeed);
                 settingsWindow?.RefreshSessionHistory();
+                settingsWindow?.SetSessionActive(true);
             }
             catch { }
         }
@@ -703,6 +734,7 @@ namespace StreamTweak
                     _appsToRelaunch.Clear();
                     _isAutoSessionActive = false;
                     settingsWindow?.RefreshSessionHistory();
+                    settingsWindow?.SetSessionActive(false);
                 }
             }
             catch { }
@@ -828,11 +860,13 @@ namespace StreamTweak
 
         #endregion
 
-        #region Dolby Audio Monitoring
+        #region Spatial Audio Monitoring
 
         private void StartDolbyMonitor()
         {
             if (!isAudioMonitorEnabled || _dolbyMonitor.IsEnabled) return;
+            _dolbyMonitor.TargetDeviceName = _audioOutputDevice;
+            _dolbyMonitor.SpatialFormat    = _audioSpatialFormat;
             _dolbyMonitor.Enable();
         }
 

@@ -1,0 +1,116 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+
+namespace StreamTweak
+{
+    public class GameLibraryEntry
+    {
+        public string Name { get; set; } = "";
+        public string Store { get; set; } = "";
+        public string? SteamAppId { get; set; }
+
+        /// <summary>Store-specific identifier used for cover art lookup and stable deduplication.</summary>
+        public string? StoreId { get; set; }
+
+        /// <summary>
+        /// If false, this game is excluded from the Sunshine sync (but remains visible in the list).
+        /// </summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>
+        /// Set to true when the user manually edits the game name, preventing auto-correction
+        /// from the Steam Store API on subsequent syncs.
+        /// </summary>
+        public bool UserRenamed { get; set; } = false;
+
+        /// <summary>
+        /// True for games added manually by the user (not discovered by a store scanner).
+        /// Manual games are preserved across automatic syncs and cleared by Clear Sync.
+        /// </summary>
+        public bool IsManual { get; set; } = false;
+
+        /// <summary>
+        /// Full path to the game executable. Only persisted for manual games;
+        /// auto-discovered games re-resolve their ExePath on each scan.
+        /// </summary>
+        public string? ExePath { get; set; }
+    }
+
+    /// <summary>
+    /// Persists game library sync state to %LOCALAPPDATA%\StreamTweak\gamelibrarystate.json.
+    /// Provides the APPSTORES JSON payload served by StreamTweakBridge.
+    /// </summary>
+    public class GameLibraryState
+    {
+        public bool SyncEnabled { get; set; } = false;
+        public string? SunshinePath { get; set; }
+        public DateTime? LastSyncUtc { get; set; }
+        public List<GameLibraryEntry> Games { get; set; } = new();
+
+
+        // ── Static singleton ─────────────────────────────────────────────────
+
+        private static GameLibraryState? _current;
+
+        /// <summary>Singleton loaded from disk on first access.</summary>
+        public static GameLibraryState Current
+        {
+            get
+            {
+                if (_current == null) _current = Load();
+                return _current;
+            }
+        }
+
+        /// <summary>Forces a reload from disk on next access of Current.</summary>
+        public static void Invalidate() => _current = null;
+
+        // ── Persistence ──────────────────────────────────────────────────────
+
+        private static string FilePath => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StreamTweak", "gamelibrarystate.json");
+
+        public static GameLibraryState Load()
+        {
+            try
+            {
+                if (!File.Exists(FilePath)) return new GameLibraryState();
+                string json = File.ReadAllText(FilePath);
+                return JsonSerializer.Deserialize<GameLibraryState>(json) ?? new GameLibraryState();
+            }
+            catch
+            {
+                return new GameLibraryState();
+            }
+        }
+
+        public void Save()
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+                File.WriteAllText(FilePath, JsonSerializer.Serialize(this,
+                    new JsonSerializerOptions { WriteIndented = true }));
+                _current = this; // keep singleton in sync
+            }
+            catch { }
+        }
+
+        // ── APPSTORES payload ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// Returns the JSON object {"Game Name": "Store", ...} for the APPSTORES command.
+        /// </summary>
+        public string ToAppStoresJson()
+        {
+            var enabled = Games.Where(g => g.Enabled).ToList();
+            if (enabled.Count == 0) return "{}";
+            var dict = enabled.ToDictionary(g => g.Name, g => g.Store);
+            return JsonSerializer.Serialize(dict);
+        }
+    }
+}

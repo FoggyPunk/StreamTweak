@@ -21,9 +21,6 @@ namespace StreamTweak
         [DllImport("DwmApi")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, int[] attrValue, int attrSize);
         private const int DWMWA_USE_IMMERSIVE_DARK_MODE  = 20;
-        private const int DWMWA_SYSTEMBACKDROP_TYPE       = 38;
-        private const int DWMSBT_MICA                     = 2;
-        private const int DWMSBT_MICA_ALT                 = 4;
 
         private readonly string configFilePath;
         private Dictionary<string, string>? currentAdapterSpeeds;
@@ -37,8 +34,13 @@ namespace StreamTweak
         public event EventHandler? StreamingModeChanged;
         public event EventHandler? AutoStreamingEnabledChanged;
         public event EventHandler? AudioMonitorEnabledChanged;
+        public event EventHandler? AudioDeviceChanged;
+        public event EventHandler? AudioFormatChanged;
 
         private bool _isAudioMonitorEnabled = false;
+        private string _audioOutputDevice = "Steam Streaming Speakers";
+        private SpatialAudioFormat _audioSpatialFormat = SpatialAudioFormat.DolbyAtmos;
+        private bool _audioDeviceComboPopulating = false;
 
         private static readonly SolidColorBrush StreamingStartBrush    = new(Color.FromRgb(168, 213, 162));
         private static readonly SolidColorBrush StreamingStopBrush     = new(Color.FromRgb(244, 168, 168));
@@ -70,10 +72,7 @@ namespace StreamTweak
             this.SourceInitialized += (_, _) =>
             {
                 UpdateTitleBarTheme();
-                ApplyBackdrop();
                 var hwndSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
-                if (hwndSource != null)
-                    hwndSource.CompositionTarget.BackgroundColor = Colors.Transparent;
                 hwndSource?.AddHook(WndProc);
             };
 
@@ -82,7 +81,8 @@ namespace StreamTweak
             LoadManagedApps();
             LoadNetworkAdapters();
             RefreshSessionHistory();
-            RefreshDolbyAccessStatusAsync();
+            RefreshStreamingAppInfo();
+            LoadAudioDevicesAsync();
         }
 
         // ─── Public sync methods called from App.xaml.cs ───────────────────
@@ -139,18 +139,22 @@ namespace StreamTweak
             Application.Current.Resources["AccentHoverColor"] = hoverBrush;
         }
 
+        private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+
         private void NetworkTabButton_Click(object sender, RoutedEventArgs e)
         {
             NetworkPanel.Visibility  = Visibility.Visible;
             DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Collapsed;
             AppPanel.Visibility      = Visibility.Collapsed;
+            GameLibPanel.Visibility  = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Collapsed;
             NetworkTabButton.Style   = (Style)this.Resources["TabButtonActive"];
             DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButton"];
             AppTabButton.Style       = (Style)this.Resources["TabButton"];
+            GameLibTabButton.Style   = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
         }
@@ -161,15 +165,18 @@ namespace StreamTweak
             DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Visible;
             AppPanel.Visibility      = Visibility.Collapsed;
+            GameLibPanel.Visibility  = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Collapsed;
             NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
             DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButtonActive"];
             AppTabButton.Style       = (Style)this.Resources["TabButton"];
+            GameLibTabButton.Style   = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
-            RefreshDolbyAccessStatusAsync();
+            if (!string.IsNullOrEmpty(_audioOutputDevice))
+                RefreshAudioCapabilitiesAsync(_audioOutputDevice);
         }
 
         private void LogsTabButton_Click(object sender, RoutedEventArgs e)
@@ -178,12 +185,14 @@ namespace StreamTweak
             DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Collapsed;
             AppPanel.Visibility      = Visibility.Collapsed;
+            GameLibPanel.Visibility  = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Visible;
             AboutPanel.Visibility    = Visibility.Collapsed;
             NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
             DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButton"];
             AppTabButton.Style       = (Style)this.Resources["TabButton"];
+            GameLibTabButton.Style   = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButtonActive"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
             RefreshStreamingAppInfo();
@@ -195,12 +204,14 @@ namespace StreamTweak
             DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Collapsed;
             AppPanel.Visibility      = Visibility.Collapsed;
+            GameLibPanel.Visibility  = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Visible;
             NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
             DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButton"];
             AppTabButton.Style       = (Style)this.Resources["TabButton"];
+            GameLibTabButton.Style   = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButtonActive"];
             PopulateAboutInfo();
@@ -209,16 +220,56 @@ namespace StreamTweak
 
         private void ApplyDarkTheme()
         {
-            this.Resources["WindowBackground"]        = new SolidColorBrush(Color.FromArgb(0x1A, 32, 32, 32));
-            this.Resources["PanelBackground"]         = new SolidColorBrush(Color.FromArgb(0x33, 45, 45, 45));
+            this.Resources["WindowBackground"]        = new SolidColorBrush(Color.FromArgb(0x19, 255, 255, 255));
+            this.Resources["SidebarBackground"]       = new SolidColorBrush(Color.FromRgb(0x20, 0x20, 0x20));
+            this.Resources["PanelBackground"]         = new SolidColorBrush(Color.FromArgb(0x1A, 255, 255, 255));
             this.Resources["TextForeground"]          = new SolidColorBrush(Colors.White);
-            this.Resources["BorderColor"]             = new SolidColorBrush(Color.FromRgb(60, 60, 60));
-            this.Resources["SecondaryTextForeground"] = new SolidColorBrush(Color.FromRgb(171, 171, 171));
+            this.Resources["BorderColor"]             = new SolidColorBrush(Color.FromArgb(0x33, 255, 255, 255));
+            this.Resources["SecondaryTextForeground"] = new SolidColorBrush(Color.FromRgb(186, 186, 186));
             this.Resources["WarningForeground"]       = new SolidColorBrush(Color.FromRgb(255, 193, 7));
-            Application.Current.Resources["PanelBackground"]  = new SolidColorBrush(Color.FromArgb(0x33, 45, 45, 45));
+            Application.Current.Resources["PanelBackground"]  = new SolidColorBrush(Color.FromArgb(0x1A, 255, 255, 255));
             Application.Current.Resources["TextForeground"]   = new SolidColorBrush(Colors.White);
-            Application.Current.Resources["BorderColor"]      = new SolidColorBrush(Color.FromRgb(60, 60, 60));
+            Application.Current.Resources["BorderColor"]      = new SolidColorBrush(Color.FromArgb(0x33, 255, 255, 255));
             UpdateTitleBarTheme();
+        }
+
+        // ─── Session indicator (called from App.xaml.cs) ────────────────────
+
+        private System.Windows.Media.Animation.Storyboard? _sessionPulse;
+
+        public void SetSessionActive(bool active)
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (active)
+                {
+                    SessionIndicatorDot.Foreground = new SolidColorBrush(Color.FromRgb(76, 175, 80));
+                    SessionIndicatorText.Text = "Streaming";
+                    if (_sessionPulse == null)
+                    {
+                        var anim = new System.Windows.Media.Animation.DoubleAnimation
+                        {
+                            From = 1.0, To = 0.25,
+                            Duration = TimeSpan.FromSeconds(0.85),
+                            AutoReverse = true,
+                            RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever
+                        };
+                        System.Windows.Media.Animation.Storyboard.SetTarget(anim, SessionIndicatorDot);
+                        System.Windows.Media.Animation.Storyboard.SetTargetProperty(
+                            anim, new PropertyPath("Opacity"));
+                        _sessionPulse = new System.Windows.Media.Animation.Storyboard();
+                        _sessionPulse.Children.Add(anim);
+                    }
+                    _sessionPulse.Begin();
+                }
+                else
+                {
+                    _sessionPulse?.Stop();
+                    SessionIndicatorDot.Foreground = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
+                    SessionIndicatorDot.Opacity = 1.0;
+                    SessionIndicatorText.Text = "Inactive";
+                }
+            });
         }
 
         private void UpdateTitleBarTheme()
@@ -232,23 +283,7 @@ namespace StreamTweak
             catch { }
         }
 
-        private void ApplyBackdrop()
-        {
-            try
-            {
-                var hwnd = new WindowInteropHelper(this).Handle;
-                if (hwnd == IntPtr.Zero) return;
-                int build = Environment.OSVersion.Version.Build;
-                if (build >= 22000)
-                {
-                    int type = build >= 22621 ? DWMSBT_MICA_ALT : DWMSBT_MICA;
-                    DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, new[] { type }, 4);
-                }
-            }
-            catch { }
-        }
-
-        private void RefreshStreamingAppInfo()
+private void RefreshStreamingAppInfo()
         {
             try
             {
@@ -259,18 +294,27 @@ namespace StreamTweak
                     StreamingAppNotFoundText.Visibility  = Visibility.Collapsed;
                     StreamingAppNameText.Text            = info.AppName;
                     StreamingAppLogPathText.Text         = info.LogFolderPath ?? "Log folder not found";
-                    StreamingAppIconImage.Source         = ExtractExeIcon(info.ExePath);
+                    SidebarStreamHostIcon.Source         = ExtractExeIcon(info.ExePath);
+                    SidebarStreamHostIcon.Visibility     = Visibility.Visible;
+                    SidebarStreamHostText.Text           = info.AppName;
+                    SidebarStreamHostText.Foreground     = (System.Windows.Media.Brush)this.Resources["TextForeground"];
                 }
                 else
                 {
                     StreamingAppFoundPanel.Visibility    = Visibility.Collapsed;
                     StreamingAppNotFoundText.Visibility  = Visibility.Visible;
+                    SidebarStreamHostIcon.Visibility     = Visibility.Collapsed;
+                    SidebarStreamHostText.Text           = "N/A";
+                    SidebarStreamHostText.Foreground     = (System.Windows.Media.Brush)this.Resources["SecondaryTextForeground"];
                 }
             }
             catch
             {
                 StreamingAppFoundPanel.Visibility   = Visibility.Collapsed;
                 StreamingAppNotFoundText.Visibility = Visibility.Visible;
+                SidebarStreamHostIcon.Visibility    = Visibility.Collapsed;
+                SidebarStreamHostText.Text          = "N/A";
+                SidebarStreamHostText.Foreground    = (System.Windows.Media.Brush)this.Resources["SecondaryTextForeground"];
             }
         }
 
@@ -445,6 +489,14 @@ namespace StreamTweak
 
                 if (root.TryGetProperty("AudioMonitorEnabled", out var audioEl))
                     _isAudioMonitorEnabled = audioEl.GetBoolean();
+
+                if (root.TryGetProperty("AudioOutputDevice", out var devEl))
+                    _audioOutputDevice = devEl.GetString() ?? "Steam Streaming Speakers";
+
+                if (root.TryGetProperty("AudioSpatialFormat", out var fmtEl))
+                    _audioSpatialFormat = fmtEl.GetString() == "WindowsSonic"
+                        ? SpatialAudioFormat.WindowsSonic
+                        : SpatialAudioFormat.DolbyAtmos;
 
                 AutoStreamingToggle.IsChecked = isAutoStreamingEnabled;
             }
@@ -778,21 +830,52 @@ namespace StreamTweak
             AutoStreamingEnabledChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        private void DolbyMonitorToggle_Changed(object sender, RoutedEventArgs e)
+        private void SpatialAudioToggle_Changed(object sender, RoutedEventArgs e)
         {
-            _isAudioMonitorEnabled = DolbyMonitorToggle.IsChecked ?? false;
+            _isAudioMonitorEnabled = SpatialAudioToggle.IsChecked ?? false;
             SaveAudioMonitorStateToConfig();
             AudioMonitorEnabledChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void AudioFormatRadio_Changed(object sender, RoutedEventArgs e)
+        {
+            _audioSpatialFormat = DolbyFormatRadio.IsChecked == true
+                ? SpatialAudioFormat.DolbyAtmos
+                : SpatialAudioFormat.WindowsSonic;
+            SaveAudioFormatToConfig();
+            AudioFormatChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void AudioDeviceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_audioDeviceComboPopulating) return;
+            if (AudioDeviceComboBox.SelectedItem is string selected)
+            {
+                _audioOutputDevice = selected;
+                SaveAudioDeviceToConfig();
+                AudioDeviceChanged?.Invoke(this, EventArgs.Empty);
+                RefreshAudioCapabilitiesAsync(_audioOutputDevice);
+            }
         }
 
         private void SaveAudioMonitorStateToConfig() =>
             PatchConfig(d => d["AudioMonitorEnabled"] = _isAudioMonitorEnabled);
 
+        private void SaveAudioDeviceToConfig() =>
+            PatchConfig(d => d["AudioOutputDevice"] = _audioOutputDevice);
+
+        private void SaveAudioFormatToConfig() =>
+            PatchConfig(d => d["AudioSpatialFormat"] =
+                _audioSpatialFormat == SpatialAudioFormat.DolbyAtmos ? "DolbyAtmos" : "WindowsSonic");
+
         public void SyncAudioMonitorState(bool enabled)
         {
             _isAudioMonitorEnabled = enabled;
-            DolbyMonitorToggle.IsChecked = enabled;
+            SpatialAudioToggle.IsChecked = enabled;
         }
+
+        public string SelectedAudioDevice => _audioOutputDevice;
+        public SpatialAudioFormat SelectedAudioFormat => _audioSpatialFormat;
 
         public void SyncDolbyMonitorStatus(string status)
         {
@@ -809,21 +892,73 @@ namespace StreamTweak
             }
         }
 
-        private async void RefreshDolbyAccessStatusAsync()
+        private async void LoadAudioDevicesAsync()
+        {
+            _audioDeviceComboPopulating = true;
+            try
+            {
+                var devices = await DolbyAudioMonitor.GetAudioOutputDevicesAsync();
+
+                AudioDeviceComboBox.Items.Clear();
+                foreach (var d in devices)
+                    AudioDeviceComboBox.Items.Add(d);
+
+                // Pre-select saved device, fall back to Steam Streaming Speakers, then first item
+                string toSelect = devices.Contains(_audioOutputDevice)
+                    ? _audioOutputDevice
+                    : devices.FirstOrDefault(d => d.Contains("Steam Streaming Speakers", StringComparison.OrdinalIgnoreCase))
+                      ?? devices.FirstOrDefault()
+                      ?? string.Empty;
+
+                if (!string.IsNullOrEmpty(toSelect))
+                {
+                    AudioDeviceComboBox.SelectedItem = toSelect;
+                    _audioOutputDevice = toSelect;
+                }
+            }
+            finally
+            {
+                _audioDeviceComboPopulating = false;
+            }
+
+            // Apply saved format to radio buttons
+            DolbyFormatRadio.IsChecked = _audioSpatialFormat == SpatialAudioFormat.DolbyAtmos;
+            SonicFormatRadio.IsChecked = _audioSpatialFormat == SpatialAudioFormat.WindowsSonic;
+
+            // Check capabilities for the selected device
+            if (!string.IsNullOrEmpty(_audioOutputDevice))
+                RefreshAudioCapabilitiesAsync(_audioOutputDevice);
+        }
+
+        private async void RefreshAudioCapabilitiesAsync(string deviceName)
         {
             DolbyAccessIcon.Foreground = System.Windows.Media.Brushes.Gray;
             DolbyAccessText.Text = "Checking Dolby Atmos for Headphones\u2026";
+            SonicAccessIcon.Foreground = System.Windows.Media.Brushes.Gray;
+            SonicAccessText.Text = "Checking Windows Sonic for Headphones\u2026";
 
-            bool available = await DolbyAudioMonitor.IsDolbyAtmosAvailableAsync();
-            if (available)
+            var (dolby, sonic) = await DolbyAudioMonitor.GetSpatialAudioCapabilitiesAsync(deviceName);
+
+            if (dolby)
             {
                 DolbyAccessIcon.Foreground = new SolidColorBrush(Color.FromRgb(76, 175, 80));
-                DolbyAccessText.Text = "Dolby Atmos for Headphones: detected";
+                DolbyAccessText.Text = "Dolby Atmos for Headphones: available";
             }
             else
             {
                 DolbyAccessIcon.Foreground = new SolidColorBrush(Color.FromRgb(220, 70, 50));
-                DolbyAccessText.Text = "Dolby Atmos for Headphones: not found";
+                DolbyAccessText.Text = "Dolby Atmos for Headphones: unavailable";
+            }
+
+            if (sonic)
+            {
+                SonicAccessIcon.Foreground = new SolidColorBrush(Color.FromRgb(76, 175, 80));
+                SonicAccessText.Text = "Windows Sonic for Headphones: available";
+            }
+            else
+            {
+                SonicAccessIcon.Foreground = new SolidColorBrush(Color.FromRgb(220, 70, 50));
+                SonicAccessText.Text = "Windows Sonic for Headphones: not available";
             }
         }
         public void RefreshDisplayPanelIfVisible()
@@ -834,19 +969,21 @@ namespace StreamTweak
 
         private void DisplayTabButton_Click(object sender, RoutedEventArgs e)
         {
-            NetworkPanel.Visibility = Visibility.Collapsed;
-            AudioPanel.Visibility   = Visibility.Collapsed;
-            DisplayPanel.Visibility = Visibility.Visible;
-            AppPanel.Visibility     = Visibility.Collapsed;
-            LogsPanel.Visibility    = Visibility.Collapsed;
-            AboutPanel.Visibility   = Visibility.Collapsed;
+            NetworkPanel.Visibility  = Visibility.Collapsed;
+            AudioPanel.Visibility    = Visibility.Collapsed;
+            DisplayPanel.Visibility  = Visibility.Visible;
+            AppPanel.Visibility      = Visibility.Collapsed;
+            GameLibPanel.Visibility  = Visibility.Collapsed;
+            LogsPanel.Visibility     = Visibility.Collapsed;
+            AboutPanel.Visibility    = Visibility.Collapsed;
 
-            NetworkTabButton.Style = (Style)this.Resources["TabButton"];
-            AudioTabButton.Style   = (Style)this.Resources["TabButton"];
-            DisplayTabButton.Style = (Style)this.Resources["TabButtonActive"];
-            AppTabButton.Style     = (Style)this.Resources["TabButton"];
-            LogsTabButton.Style    = (Style)this.Resources["TabButton"];
-            AboutTabButton.Style   = (Style)this.Resources["TabButton"];
+            NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
+            AudioTabButton.Style     = (Style)this.Resources["TabButton"];
+            DisplayTabButton.Style   = (Style)this.Resources["TabButtonActive"];
+            AppTabButton.Style       = (Style)this.Resources["TabButton"];
+            GameLibTabButton.Style   = (Style)this.Resources["TabButton"];
+            LogsTabButton.Style      = (Style)this.Resources["TabButton"];
+            AboutTabButton.Style     = (Style)this.Resources["TabButton"];
 
             RefreshDisplayPanelAsync();
         }
@@ -858,7 +995,6 @@ namespace StreamTweak
             DisplayLoadingText.Visibility = Visibility.Visible;
             MonitorStackPanel.Visibility = Visibility.Collapsed;
             AutoHdrSection.Visibility = Visibility.Collapsed;
-            DisplayContextLabel.Visibility = Visibility.Collapsed;
 
             try
             {
@@ -873,13 +1009,16 @@ namespace StreamTweak
 
                 if (appInfo != null)
                 {
-                    DisplayContextIcon.Source = ExtractExeIcon(appInfo.ExePath);
-                    DisplayContextText.Text = appInfo.AppName;
-                    DisplayContextLabel.Visibility = Visibility.Visible;
+                    SidebarStreamHostIcon.Source     = ExtractExeIcon(appInfo.ExePath);
+                    SidebarStreamHostIcon.Visibility = Visibility.Visible;
+                    SidebarStreamHostText.Text       = appInfo.AppName;
+                    SidebarStreamHostText.Foreground = (System.Windows.Media.Brush)this.Resources["TextForeground"];
                 }
                 else
                 {
-                    DisplayContextLabel.Visibility = Visibility.Collapsed;
+                    SidebarStreamHostIcon.Visibility = Visibility.Collapsed;
+                    SidebarStreamHostText.Text       = "N/A";
+                    SidebarStreamHostText.Foreground = (System.Windows.Media.Brush)this.Resources["SecondaryTextForeground"];
                 }
 
                 BuildMonitorCards(toShow);
@@ -1140,12 +1279,14 @@ namespace StreamTweak
             DisplayPanel.Visibility  = Visibility.Collapsed;
             AudioPanel.Visibility    = Visibility.Collapsed;
             AppPanel.Visibility      = Visibility.Visible;
+            GameLibPanel.Visibility  = Visibility.Collapsed;
             LogsPanel.Visibility     = Visibility.Collapsed;
             AboutPanel.Visibility    = Visibility.Collapsed;
             NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
             DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
             AudioTabButton.Style     = (Style)this.Resources["TabButton"];
             AppTabButton.Style       = (Style)this.Resources["TabButtonActive"];
+            GameLibTabButton.Style   = (Style)this.Resources["TabButton"];
             LogsTabButton.Style      = (Style)this.Resources["TabButton"];
             AboutTabButton.Style     = (Style)this.Resources["TabButton"];
         }
@@ -1285,6 +1426,144 @@ namespace StreamTweak
         {
             ManagedAppsList.ItemsSource = null;
             ManagedAppsList.ItemsSource = _managedApps;
+        }
+
+        // ─── Game Library Tab ─────────────────────────────────────────────────
+
+        private void GameLibTabButton_Click(object sender, RoutedEventArgs e)
+        {
+            NetworkPanel.Visibility  = Visibility.Collapsed;
+            DisplayPanel.Visibility  = Visibility.Collapsed;
+            AudioPanel.Visibility    = Visibility.Collapsed;
+            AppPanel.Visibility      = Visibility.Collapsed;
+            GameLibPanel.Visibility  = Visibility.Visible;
+            LogsPanel.Visibility     = Visibility.Collapsed;
+            AboutPanel.Visibility    = Visibility.Collapsed;
+            NetworkTabButton.Style   = (Style)this.Resources["TabButton"];
+            DisplayTabButton.Style   = (Style)this.Resources["TabButton"];
+            AudioTabButton.Style     = (Style)this.Resources["TabButton"];
+            AppTabButton.Style       = (Style)this.Resources["TabButton"];
+            GameLibTabButton.Style   = (Style)this.Resources["TabButtonActive"];
+            LogsTabButton.Style      = (Style)this.Resources["TabButton"];
+            AboutTabButton.Style     = (Style)this.Resources["TabButton"];
+            RefreshGameLibPanel();
+        }
+
+        private void RefreshGameLibPanel()
+        {
+            var state = GameLibraryState.Current;
+            GameLibSyncEnabledToggle.IsChecked = state.SyncEnabled;
+
+            if (state.LastSyncUtc.HasValue)
+            {
+                var local = state.LastSyncUtc.Value.ToLocalTime();
+                GameLibStatusLabel.Text =
+                    $"{state.Games.Count} games.\nLast sync: {local:dd/MM/yyyy HH:mm}.";
+            }
+            else
+            {
+                GameLibStatusLabel.Text = state.SyncEnabled
+                    ? "Sync enabled — will run at next startup."
+                    : "Not yet synced.";
+            }
+
+            RefreshGameLibList();
+        }
+
+        private void RefreshGameLibList()
+        {
+            GameLibList.ItemsSource = null;
+            GameLibList.ItemsSource = GameLibraryState.Current.Games;
+        }
+
+        private void GameLibSyncEnabled_Changed(object sender, RoutedEventArgs e)
+        {
+            var state = GameLibraryState.Current;
+            state.SyncEnabled = GameLibSyncEnabledToggle.IsChecked == true;
+            state.Save();
+        }
+
+        private async void SyncNow_Click(object sender, RoutedEventArgs e)
+        {
+            SyncNowButton.IsEnabled  = false;
+            ClearSyncButton.IsEnabled = false;
+            try
+            {
+                GameLibStatusLabel.Text = "Scanning game libraries…";
+                string status = await GameLibraryService.PerformSyncAsync();
+                GameLibStatusLabel.Text = status;
+                RefreshGameLibList();
+            }
+            finally
+            {
+                SyncNowButton.IsEnabled  = true;
+                ClearSyncButton.IsEnabled = true;
+            }
+        }
+
+        private async void ClearSync_Click(object sender, RoutedEventArgs e)
+        {
+            SyncNowButton.IsEnabled  = false;
+            ClearSyncButton.IsEnabled = false;
+            try
+            {
+                GameLibStatusLabel.Text = "Clearing managed apps from Sunshine…";
+                string status = await GameLibraryService.ClearSyncAsync();
+                GameLibStatusLabel.Text = status;
+                RefreshGameLibList();
+            }
+            finally
+            {
+                SyncNowButton.IsEnabled  = true;
+                ClearSyncButton.IsEnabled = true;
+            }
+        }
+
+        private void GameLibEntry_EnabledChanged(object sender, RoutedEventArgs e)
+        {
+            GameLibraryState.Current.Save();
+        }
+
+        private async void AddGame_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Title  = "Select game executable",
+                Filter = "Executables (*.exe)|*.exe",
+            };
+            if (dlg.ShowDialog(this) != true) return;
+
+            AddGameButton.IsEnabled = false;
+            try
+            {
+                GameLibStatusLabel.Text = "Adding game…";
+                string status = await GameLibraryService.AddManualGameAsync(dlg.FileName);
+                GameLibStatusLabel.Text = status;
+                RefreshGameLibList();
+            }
+            finally
+            {
+                AddGameButton.IsEnabled = true;
+            }
+        }
+
+        private async void RemoveGame_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not System.Windows.Controls.Button btn) return;
+            if (btn.DataContext is not GameLibraryEntry entry) return;
+
+            btn.IsEnabled = false;
+            try
+            {
+                GameLibStatusLabel.Text = $"Removing \"{entry.Name}\"…";
+                string status = await GameLibraryService.RemoveGameAsync(entry);
+                GameLibStatusLabel.Text = status;
+                RefreshGameLibList();
+            }
+            finally
+            {
+                btn.IsEnabled = true;
+            }
         }
     }
 

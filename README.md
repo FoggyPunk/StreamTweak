@@ -16,10 +16,11 @@ With StreamLight, you can manage host NIC speed without leaving the client:
 - **Show host NIC speed** — query StreamTweak on the host and see the current Ethernet adapter speed at a glance
 - **Set host to 1 Gbps** — send the speed-change command to StreamTweak from the client before connecting, with a built-in 10-second countdown and a 30-second auto-revert if no connection is made
 - **Host metrics in overlay** *(StreamLight 1.2.0+)* — StreamLight's performance overlay now includes a live "Host Metrics" section showing GPU %, GPU encoder %, GPU temperature, VRAM used / total (MB), CPU %, and network TX (Mbps) pulled directly from StreamTweak in real time
+- **Store badges on game covers** *(StreamLight 2.0.0+)* — each game synced by StreamTweak's Game Library shows a badge (Steam, Epic Games, GOG, Ubisoft Connect, Xbox, Battle.net) in the bottom-right corner of its cover art
 
 StreamLight and StreamTweak are designed to work together, giving you full control over the streaming setup from both sides of the connection.
 
-> StreamLight is available for **Windows only** and requires StreamTweak to be installed and running on the host PC. Host metrics in the overlay require **StreamLight 1.2.0** or later.
+> StreamLight is available for **Windows only** and requires StreamTweak to be installed and running on the host PC. Store badges and host metrics require **StreamLight 2.0.0** or later.
 
 ## 🔥 Key Features
 
@@ -38,8 +39,11 @@ StreamLight and StreamTweak are designed to work together, giving you full contr
 - **Virtual display awareness:** when Apollo or Vibepollo is detected, the Display tab automatically focuses on the virtual display used for remote streaming.
 
 ### 🎧 Audio Enhancements
-- **Auto Dolby Atmos for Headphones:** Automatically enables Dolby Atmos for Headphones on Steam Streaming Speakers 30 seconds after a streaming session starts — requires Dolby Access on the host PC.
-- **Dolby Access detection:** The Audio tab shows a live indicator (via Windows Spatial Audio API) confirming whether the Dolby Atmos format is available on the system.
+- **Auto spatial audio:** Automatically activates the spatial audio format of your choice 30 seconds after a streaming session starts — on the output device of your choice.
+- **Output device selector:** All audio render devices on the host PC are listed; Steam Streaming Speakers is pre-selected by default when present.
+- **Dolby Atmos for Headphones:** Supported when [Dolby Access](https://apps.microsoft.com/detail/9n0866fs04w8) is installed; the Audio tab shows a live availability indicator per device.
+- **Windows Sonic for Headphones:** Built into Windows 10 and later — always available, no additional app required; select it as an alternative to Dolby Atmos via the format selector.
+- **Live capability check:** For the selected output device, both Dolby Atmos and Windows Sonic show a green or red dot confirming availability before activation.
 
 ### 🖥️ UI & Control Experience
 - **Settings Dashboard:** Sleek UI to manage physical adapters and speeds.
@@ -51,19 +55,28 @@ StreamLight and StreamTweak are designed to work together, giving you full contr
 - **Per-app AutoManage toggle:** Each entry can be individually included or excluded from automation while staying in the list.
 - **Manual controls:** Kill or restart any listed app on demand from the Apps tab, without waiting for a streaming session.
 
+### 🎮 Game Library Sync
+- **Multi-store discovery:** Automatically detects installed games from Steam, Epic Games, GOG, Ubisoft Connect, Xbox App, EA App, and Battle.net — and syncs them to Sunshine (and compatible forks: Apollo, Vibeshine, Vibepollo).
+- **Native cover art:** Cover images are fetched from each store's own CDN (Steam CDN, Epic metadata, GOG API, Battle.net aggregate.json), cached locally as PNG, and passed to Sunshine for display.
+- **Battle.net support:** Games are detected via the local `aggregate.json` file; all entries launch via Battle.net.exe — no per-game exe paths required.
+- **Manual game management:** Add any executable not auto-detected via the Add button; manual entries survive re-syncs and are removed individually with the − button.
+- **Safe sync:** Manually created Sunshine app entries are never modified. Uninstalled games are removed on the next sync.
+- **Store badges in StreamLight:** The game→store map is served to StreamLight via the APPSTORES command on the TCP bridge (port 47998), enabling per-game store badge display in the client.
+
 ### 📚 System Info & Diagnostics
 - **Logs Tab:** Full session history — every streaming session is recorded regardless of whether NIC throttle was applied, with NIC Throttle (Yes/No), Original NIC Speed, and timestamped date including year.
 - **About Tab:** Version info, GitHub link, license badge, and donation button in a dedicated panel.
 
-## ✨ What's New in Version 4.4.0 — The "Telemetry Update"
+## ✨ What's New in Version 5.0.0 — The "Game Library Update"
 
-4.4.0 adds real-time host metrics collection and exposes them to StreamLight via a new STATS command on the TCP bridge, enabling a live host telemetry section in StreamLight's performance overlay.
+5.0.0 introduces Game Library Sync — automatic multi-store discovery, native cover art, Battle.net support, manual game management, and store badge serving to StreamLight. It also introduces the new unified FoggyBytes icon shared across both apps.
 
-* **New: Host metrics collection —** StreamTweak collects GPU usage %, GPU encoder usage %, GPU temperature (NVIDIA only via NVML), VRAM used and total (MB, total NVIDIA only), CPU usage %, and network TX (Mbps) in real time using PDH PerformanceCounters and NVML P/Invoke
-* **New: STATS TCP command —** the bridge on port 47998 accepts a new `STATS` command and returns a JSON payload; StreamLight 1.2.0 or later reads this data and displays it in the performance overlay under a dedicated "Host Metrics" section
-* **Improved: Async metrics init —** `HostMetricsCollector` initialises on a background thread to avoid any impact on WPF startup time; counter list is refreshed every 60 seconds to track ephemeral GPU Engine instances
-
-> StreamLight 1.2.0 or later is required to display host metrics in the overlay.
+* **New FoggyBytes icon —** a new app icon unifies the visual identity of StreamTweak and StreamLight across the FoggyBytes suite
+* **Game Library Sync —** auto-discovers installed games from Steam, Epic Games, GOG, Ubisoft Connect, Xbox App, EA App, and Battle.net; syncs them to Sunshine and compatible forks without touching manually created entries
+* **Native cover art —** images fetched from each store's own CDN and cached as PNG; no third-party services involved
+* **Battle.net —** detected via local aggregate.json; all games launch via Battle.net.exe
+* **Manual game management —** Add button to include any exe; − button to remove individual entries; manual games persist across re-syncs
+* **APPSTORES command —** serves the game→store map to StreamLight via the TCP bridge; enables per-game store badges in the client
 
 ## 📖 The Technical Story Behind This Project
 This project was born out of a specific frustration in the cloud gaming community. When using game streaming software like **[Moonlight](https://github.com/moonlight-stream/moonlight-qt)** with **Sunshine** or **Apollo**, a known issue occurs if the host PC and the client have mismatched Ethernet link speeds.
@@ -138,8 +151,44 @@ ManagedAppController.StartApps(_appsToRelaunch)
 
 The kill step runs at all three session-start entry points (`HandleAutoStreamStart`, manual Start button, TCP bridge `PREPARE` command), ensuring consistent behavior regardless of how the session was initiated.
 
-### Auto Dolby Atmos for Headphones (v3.1.0+)
-When a streaming session is detected and remains active for 30 continuous seconds, `DolbyAudioMonitor` queries the Windows Spatial Audio API (`SpatialAudioDeviceConfiguration`) on Steam Streaming Speakers and sets Dolby Atmos for Headphones as the active spatial audio format. Detection of [Dolby Access](https://apps.microsoft.com/detail/9n0866fs04w8) also uses the same API — if any render device reports `DolbyAtmosForHeadphones` as a supported format, the feature is considered available.
+### Game Library Sync (v5.0.0+)
+`GameLibraryScanner` discovers installed games across seven stores by reading their respective registry keys and manifest files. `StoreCoverFetcher` downloads and converts cover art to PNG from each store's CDN. `SunshineSync` reads and writes Sunshine's `apps.json`, using a `_streamtweak_managed` marker to track managed entries. `GameLibraryService` orchestrates discovery, cover fetch, and sync, and serves the result to StreamLight via the APPSTORES command.
+
+```
+GameLibraryScanner
+        │  reads registry + manifest files
+        ├─ Steam:          Library folders → appmanifest_*.acf → name + appid
+        ├─ Epic Games:     %ProgramData%\Epic\... manifest files → name + catalogId
+        ├─ GOG:            HKLM\SOFTWARE\GOG.com\Games → name + productId
+        ├─ Ubisoft Connect: HKLM\SOFTWARE\Ubisoft\Launcher\Installs → name + gameId
+        ├─ Xbox App:       %ProgramFiles%\WindowsApps → package manifest → name + pfn
+        ├─ EA App:         %ProgramData%\Electronic Arts\... manifests → name + contentId
+        └─ Battle.net:     %ProgramData%\Battle.net\Agent\aggregate.json → name + product_id
+                │
+                ▼
+StoreCoverFetcher  →  download cover art  →  cache as PNG in covers\
+                │
+                ▼
+SunshineSync
+        │  reads apps.json
+        ├─ removes entries where _streamtweak_managed = true (full sync)
+        │    OR surgically adds / removes a single entry (manual Add / Remove)
+        └─ writes apps.json with new entries, preserving all non-managed entries
+                │
+                ▼
+StreamTweakBridge  →  APPSTORES command  →  StreamLight store badges
+```
+
+`GameLibraryEntry.IsManual` distinguishes manually added entries from auto-discovered ones. Manual entries are preserved across re-syncs; `SunshineSync.AddApp` / `RemoveApp` update only the single targeted entry in `apps.json` — no other entries are touched.
+
+### Auto Spatial Audio (v3.1.0+, redesigned in v4.5.0)
+When a streaming session is detected and remains active for 30 continuous seconds, `DolbyAudioMonitor` queries the Windows Spatial Audio API (`SpatialAudioDeviceConfiguration`) on the user-selected output device and activates the chosen spatial audio format.
+
+**Supported formats:**
+- **Dolby Atmos for Headphones** — requires [Dolby Access](https://apps.microsoft.com/detail/9n0866fs04w8); availability is checked via `IsSpatialAudioFormatSupported(DolbyAtmosForHeadphones)` on the selected device.
+- **Windows Sonic for Headphones** — built into Windows 10+, no additional app required; available whenever `IsSpatialAudioSupported` is true on the device. Activated by resetting the active format to the OS default (`SetDefaultSpatialAudioFormatAsync(string.Empty)`).
+
+The output device is user-selectable from a dropdown populated at startup via `MediaDevice.GetAudioRenderSelector()`; Steam Streaming Speakers is pre-selected when present. Both `TargetDeviceName` and `SpatialFormat` are persisted to `config.json`.
 
 ```
 Streaming event detected
@@ -148,11 +197,19 @@ Streaming event detected
 30-second countdown (cancellable on stream stop)
         │
         ▼
-SpatialAudioDeviceConfiguration.GetForDeviceId(Steam Streaming Speakers)
+MediaDevice.GetAudioRenderSelector() → find selected output device by name
         │
-        ├─ IsSpatialAudioSupported? ──No──► status: not supported
-        ├─ IsSpatialAudioFormatSupported(DolbyAtmos)? ──No──► status: Dolby Access not installed
-        └─ SetDefaultSpatialAudioFormatAsync(DolbyAtmos) ──► status: ✓ enabled
+        ▼
+SpatialAudioDeviceConfiguration.GetForDeviceId(selectedDevice)
+        │
+        ├─ IsSpatialAudioSupported? ──No──► status: not supported on selected device
+        │
+        ├─ [Dolby Atmos selected]
+        │       ├─ IsSpatialAudioFormatSupported(DolbyAtmos)? ──No──► status: Dolby Access not installed
+        │       └─ SetDefaultSpatialAudioFormatAsync(DolbyAtmos) ──► status: ✓ enabled
+        │
+        └─ [Windows Sonic selected]
+                └─ SetDefaultSpatialAudioFormatAsync("") ──► status: ✓ enabled
 ```
 
 ### Display & HDR Control (v3.2.0+)
@@ -215,12 +272,12 @@ LogParser.FindStreamingAppInfo()
 3. Enable **Auto HDR** from the same tab to activate Windows Auto HDR for supported SDR games system-wide; the registry change is broadcast instantly to all running applications
 4. When Apollo or Vibepollo is detected as the active streaming server, the tab automatically focuses on the virtual display used for the session (SudoVDA / IDD); if no client is connected yet, all physical displays are shown with a contextual hint to connect Moonlight first
 
-### 🎧 Auto Dolby Atmos for Headphones
-1. Install [Dolby Access](https://apps.microsoft.com/detail/9n0866fs04w8) on the host PC and enable it at least once
-2. Enable "Auto Dolby Atmos for Headphones" in the Audio tab (or from the tray menu)
-3. The Audio tab will show a green indicator confirming Dolby Atmos for Headphones is detected
-4. When a streaming session starts and stays active for **30 seconds**, StreamTweak automatically sets Dolby Atmos for Headphones as the active spatial audio format on Steam Streaming Speakers
-5. The Status box in the Audio tab turns **green** to confirm activation
+### 🎧 Auto Spatial Audio
+1. Open the **Audio** tab and select the output device from the dropdown — Steam Streaming Speakers is pre-selected when present
+2. Check the availability indicators: **Dolby Atmos for Headphones** requires [Dolby Access](https://apps.microsoft.com/detail/9n0866fs04w8) to be installed; **Windows Sonic for Headphones** is always available on Windows 10+
+3. Choose the desired format with the radio buttons, then enable **Auto spatial audio** (or toggle it from the tray menu)
+4. When a streaming session starts and stays active for **30 seconds**, StreamTweak automatically activates the selected format on the chosen output device
+5. The Status box confirms activation with a **green ✓** message
 6. When the streaming session ends, the countdown is cancelled — activation only happens once per session
 
 ### 📱 Streaming App Manager
@@ -230,9 +287,16 @@ LogParser.FindStreamingAppInfo()
 4. When the session ends, those apps are automatically relaunched
 5. Use **End now** and **Restart** at any time to kill or relaunch a specific app on demand, without waiting for a streaming session
 
+### 🎮 Game Library Sync
+1. Open the **Games** tab — StreamTweak lists all games it has auto-detected from installed stores (Steam, Epic Games, GOG, Ubisoft Connect, Xbox App, EA App, Battle.net)
+2. Click **Sync Now** to push the list to Sunshine: cover art is downloaded from each store's own CDN and games are added to `apps.json` with the `_streamtweak_managed` marker; uninstalled games are removed automatically
+3. Use **Add** to include any executable not auto-detected — provide the path and StreamTweak adds it to both the list and Sunshine immediately
+4. Use the **−** button on any row to remove a game from both the list and Sunshine in one click; manual entries and auto-discovered entries are removed individually without affecting anything else
+5. The game→store map is served to StreamLight automatically via the APPSTORES command — store badges (Steam, Epic, GOG, Ubisoft Connect, Xbox, Battle.net) appear on game covers in the StreamLight client with no extra configuration
+
 ## 📝 Installation
 1. Go to the **Releases** page of this repository.
-2. Download the latest `StreamTweak_4.4.0_Installer.exe`
+2. Download the latest `StreamTweak_5.0.0_Installer.exe`
 3. Run the installer and enjoy seamless streaming.
 
 ## 🙏 Support the Project

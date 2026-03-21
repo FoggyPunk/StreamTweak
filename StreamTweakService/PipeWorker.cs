@@ -57,6 +57,8 @@ public class PipeWorker : BackgroundService
         _logger.LogInformation("StreamTweakService pipe worker stopped.");
     }
 
+    private static readonly string[] _allowedAppNames = { "Sunshine", "Apollo", "Vibeshine", "Vibepollo" };
+
     private async Task HandleClientAsync(NamedPipeServerStream server, CancellationToken ct)
     {
         try
@@ -73,10 +75,10 @@ public class PipeWorker : BackgroundService
                     return;
                 }
 
-                SpeedCommand? cmd;
+                PipeCommand? cmd;
                 try
                 {
-                    cmd = JsonSerializer.Deserialize<SpeedCommand>(line);
+                    cmd = JsonSerializer.Deserialize<PipeCommand>(line);
                 }
                 catch
                 {
@@ -84,24 +86,77 @@ public class PipeWorker : BackgroundService
                     return;
                 }
 
-                if (cmd == null || string.IsNullOrWhiteSpace(cmd.AdapterName) || string.IsNullOrWhiteSpace(cmd.RegistryValue))
+                if (cmd == null)
                 {
                     await writer.WriteLineAsync("ERROR:missing fields");
                     return;
                 }
 
-                _logger.LogInformation("Applying speed: adapter={Adapter} value={Value}", cmd.AdapterName, cmd.RegistryValue);
+                string commandType = cmd.Command?.ToUpperInvariant() ?? "SETSPEED";
 
-                bool success = ApplySpeedViaCim(cmd.AdapterName, cmd.RegistryValue)
-                            || ApplySpeedViaPowerShell(cmd.AdapterName, cmd.RegistryValue);
+                switch (commandType)
+                {
+                    case "SETSPEED":
+                        if (string.IsNullOrWhiteSpace(cmd.AdapterName) || string.IsNullOrWhiteSpace(cmd.RegistryValue))
+                        {
+                            await writer.WriteLineAsync("ERROR:missing fields");
+                            return;
+                        }
+                        _logger.LogInformation("Applying speed: adapter={Adapter} value={Value}", cmd.AdapterName, cmd.RegistryValue);
+                        bool speedOk = ApplySpeedViaCim(cmd.AdapterName, cmd.RegistryValue)
+                                    || ApplySpeedViaPowerShell(cmd.AdapterName, cmd.RegistryValue);
+                        await writer.WriteLineAsync(speedOk ? "OK" : "ERROR:apply failed");
+                        break;
 
-                await writer.WriteLineAsync(success ? "OK" : "ERROR:apply failed");
+                    case "WRITEFILE":
+                        if (string.IsNullOrWhiteSpace(cmd.Path) || cmd.Content == null)
+                        {
+                            await writer.WriteLineAsync("ERROR:missing fields");
+                            return;
+                        }
+                        if (!IsAllowedAppsJsonPath(cmd.Path))
+                        {
+                            await writer.WriteLineAsync("ERROR:path not allowed");
+                            return;
+                        }
+                        try
+                        {
+                            Directory.CreateDirectory(Path.GetDirectoryName(cmd.Path)!);
+                            File.WriteAllText(cmd.Path, cmd.Content, System.Text.Encoding.UTF8);
+                            _logger.LogInformation("WriteFile OK: {Path}", cmd.Path);
+                            await writer.WriteLineAsync("OK");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "WriteFile failed: {Path}", cmd.Path);
+                            await writer.WriteLineAsync($"ERROR:{ex.Message}");
+                        }
+                        break;
+
+                    default:
+                        await writer.WriteLineAsync("ERROR:unknown command");
+                        break;
+                }
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Client handler error");
         }
+    }
+
+    /// <summary>
+    /// Security check: only allow writing to apps.json files inside known streaming server directories.
+    /// </summary>
+    private static bool IsAllowedAppsJsonPath(string path)
+    {
+        if (!path.EndsWith("apps.json", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        string normalized = Path.GetFullPath(path);
+        return _allowedAppNames.Any(app =>
+            normalized.Contains(Path.DirectorySeparatorChar + app + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase));
     }
 
     // Primary method: use CIM (WMI) directly — no child process needed
@@ -173,5 +228,16 @@ public class PipeWorker : BackgroundService
         }
     }
 
-    private record SpeedCommand(string AdapterName, string RegistryValue);
+    /// <summary>
+    /// Unified pipe command.
+    /// Omit Command (or set to "SetSpeed") for NIC speed changes.
+    /// Set Command = "WriteFile" to write a file as LocalSystem.
+    /// </summary>
+    private record PipeCommand(
+        string?  Command,
+        string?  AdapterName,
+        string?  RegistryValue,
+        string?  Path,
+        string?  Content
+    );
 }
