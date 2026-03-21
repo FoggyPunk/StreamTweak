@@ -4,6 +4,13 @@ StreamTweak - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamTweak
 
+Version 5.0.1 - The "Reliability Update" (21/03/2026)
+------------------------------------------
+
+🔧 IMPROVEMENTS:
+• Session detection at startup: when StreamTweak opens while a streaming session is already in progress, the sidebar now correctly shows "Streaming" and spatial audio activates as expected
+• Sidebar sync on window open: opening the settings window during an active session now reflects the real session state immediately, without requiring a reconnect
+
 Version 5.0.0 - The "Game Library Update" (21/03/2026)
 ------------------------------------------
 

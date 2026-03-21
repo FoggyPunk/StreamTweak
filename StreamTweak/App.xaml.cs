@@ -36,6 +36,7 @@ namespace StreamTweak
         // Spatial audio monitoring
         private readonly DolbyAudioMonitor _dolbyMonitor = new();
         private bool isAudioMonitorEnabled = false;
+        private string _lastDolbyStatus = "Disabled.";
         private string _audioOutputDevice = "Steam Streaming Speakers";
         private SpatialAudioFormat _audioSpatialFormat = SpatialAudioFormat.DolbyAtmos;
 
@@ -543,8 +544,8 @@ namespace StreamTweak
                 };
 
                 settingsWindow.SyncAudioMonitorState(isAudioMonitorEnabled);
-                settingsWindow.SyncDolbyMonitorStatus(
-                    _dolbyMonitor.IsEnabled ? "Ready — waiting for next stream…" : "Disabled.");
+                settingsWindow.SyncDolbyMonitorStatus(_lastDolbyStatus);
+                settingsWindow.SetSessionActive(_isAutoSessionActive);
 
                 settingsWindow.Show();
             }
@@ -618,7 +619,7 @@ namespace StreamTweak
                     {
                         _dolbyMonitor.OnStreamingStarted();
                         if (!isAutoStreamingActive && !_isAutoSessionActive)
-                            HandleAutoStreamStart();
+                            HandleAutoStreamStart(skipNicThrottle: e.IsRetrospective);
                         else
                             StopInactivityTimer(); // reconnected within grace period
                     }
@@ -633,7 +634,7 @@ namespace StreamTweak
             catch { }
         }
 
-        private async void HandleAutoStreamStart()
+        private async void HandleAutoStreamStart(bool skipNicThrottle = false)
         {
             try
             {
@@ -645,7 +646,9 @@ namespace StreamTweak
                 if (ni == null || ni.OperationalStatus != OperationalStatus.Up) return;
 
                 long mbps = ni.Speed / 1_000_000;
-                bool needsThrottle = isAutoStreamingEnabled && mbps >= 1200;
+                // skipNicThrottle=true when the session was already in progress at StreamTweak startup:
+                // renegotiating the NIC mid-session would disrupt an active stream.
+                bool needsThrottle = !skipNicThrottle && isAutoStreamingEnabled && mbps >= 1200;
                 string capturedOriginalSpeed = string.Empty;
 
                 if (needsThrottle)
@@ -868,10 +871,12 @@ namespace StreamTweak
             _dolbyMonitor.TargetDeviceName = _audioOutputDevice;
             _dolbyMonitor.SpatialFormat    = _audioSpatialFormat;
             _dolbyMonitor.Enable();
+            _lastDolbyStatus = "Ready — waiting for next stream…";
         }
 
         private void OnDolbyStatusChanged(string status)
         {
+            _lastDolbyStatus = status;
             Application.Current.Dispatcher.Invoke(() =>
                 settingsWindow?.SyncDolbyMonitorStatus(status));
         }

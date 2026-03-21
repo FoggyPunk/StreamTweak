@@ -28,6 +28,10 @@ namespace StreamTweak
         public class StreamingEventArgs : EventArgs
         {
             public LogParser.StreamingEvent Event { get; set; }
+            // True when the event was inferred from log history at startup (session already active).
+            // Consumers can use this to skip actions that would disrupt an in-progress stream
+            // (e.g. NIC renegotiation).
+            public bool IsRetrospective { get; set; }
         }
 
         public void StartMonitoring()
@@ -46,6 +50,10 @@ namespace StreamTweak
                 monitoredDirectory = Path.GetDirectoryName(currentLogFilePath);
                 DebugLog($"Starting log monitoring in directory: {monitoredDirectory}");
                 DebugLog($"Initial log file: {Path.GetFileName(currentLogFilePath)}");
+                // Check if a streaming session was already active before StreamTweak started.
+                // This handles the case where StreamTweak is launched mid-session (e.g. after
+                // auto-login or a crash/restart) and would otherwise miss the session-start event.
+                CheckForExistingSession(currentLogFilePath);
             }
 
             try
@@ -236,6 +244,80 @@ namespace StreamTweak
             {
                 DebugLog($"ERROR opening stream reader: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Reads the tail of the log file and fires a retrospective StreamStarted event if the
+        /// most recent streaming event found is "started" (meaning the session is already active).
+        /// Called once at startup before the real-time monitoring loop begins.
+        /// </summary>
+        private void CheckForExistingSession(string logFilePath)
+        {
+            try
+            {
+                string[] lines = ReadTailLines(logFilePath, 300);
+
+                for (int i = lines.Length - 1; i >= 0; i--)
+                {
+                    LogParser.StreamingEvent ev = LogParser.ParseLogLine(lines[i]);
+
+                    if (ev == LogParser.StreamingEvent.StreamStarted)
+                    {
+                        DebugLog("Active session detected at startup — raising StreamStarted retroactively");
+                        seenStreamStarted = true;
+                        StreamingEventDetected?.Invoke(this, new StreamingEventArgs
+                        {
+                            Event = LogParser.StreamingEvent.StreamStarted,
+                            IsRetrospective = true
+                        });
+                        return;
+                    }
+
+                    if (ev == LogParser.StreamingEvent.StreamStopped)
+                    {
+                        DebugLog("No active session at startup (last event was StreamStopped)");
+                        return;
+                    }
+                }
+
+                DebugLog("No streaming events in log tail — assuming no active session at startup");
+            }
+            catch (Exception ex)
+            {
+                DebugLog($"CheckForExistingSession error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Returns the last <paramref name="lineCount"/> lines of a file using a shared read handle.
+        /// Reads at most lineCount × 200 bytes from the end to avoid loading large log files entirely.
+        /// </summary>
+        private static string[] ReadTailLines(string filePath, int lineCount)
+        {
+            const long bytesPerLine = 200;
+            try
+            {
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                bool partial = false;
+                long seek = lineCount * bytesPerLine;
+                if (fs.Length > seek)
+                {
+                    fs.Seek(-seek, SeekOrigin.End);
+                    partial = true;
+                }
+
+                using var reader = new StreamReader(fs);
+                if (partial) reader.ReadLine(); // discard possible partial first line
+
+                var lines = new List<string>();
+                string? line;
+                while ((line = reader.ReadLine()) != null)
+                    lines.Add(line);
+
+                if (lines.Count <= lineCount) return lines.ToArray();
+                return lines.GetRange(lines.Count - lineCount, lineCount).ToArray();
+            }
+            catch { return Array.Empty<string>(); }
         }
 
         public void Dispose()

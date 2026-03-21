@@ -17,6 +17,7 @@ With StreamLight, you can manage host NIC speed without leaving the client:
 - **Set host to 1 Gbps** — send the speed-change command to StreamTweak from the client before connecting, with a built-in 10-second countdown and a 30-second auto-revert if no connection is made
 - **Host metrics in overlay** *(StreamLight 1.2.0+)* — StreamLight's performance overlay now includes a live "Host Metrics" section showing GPU %, GPU encoder %, GPU temperature, VRAM used / total (MB), CPU %, and network TX (Mbps) pulled directly from StreamTweak in real time
 - **Store badges on game covers** *(StreamLight 2.0.0+)* — each game synced by StreamTweak's Game Library shows a badge (Steam, Epic Games, GOG, Ubisoft Connect, Xbox, Battle.net) in the bottom-right corner of its cover art
+- **Session detection at startup** *(StreamTweak 5.0.1+)* — if a streaming session is already in progress when StreamTweak starts (e.g. after auto-login), the sidebar and spatial audio activate immediately without requiring a reconnect
 
 StreamLight and StreamTweak are designed to work together, giving you full control over the streaming setup from both sides of the connection.
 
