@@ -68,9 +68,12 @@ StreamLight and StreamTweak are designed to work together, giving you full contr
 - **Logs Tab:** Full session history — every streaming session is recorded regardless of whether NIC throttle was applied, with NIC Throttle (Yes/No), Original NIC Speed, and timestamped date including year.
 - **About Tab:** Version info, GitHub link, license badge, and donation button in a dedicated panel.
 
-## ✨ What's New in Version 5.0.0 — The "Game Library Update"
+## ✨ What's New in Version 5.0.1 — The "Reliability Update"
 
-5.0.0 introduces Game Library Sync — automatic multi-store discovery, native cover art, Battle.net support, manual game management, and store badge serving to StreamLight. It also introduces the new unified FoggyBytes icon shared across both apps.
+* **Session detection at startup —** if a streaming session is already in progress when StreamTweak opens (e.g. after auto-login), the sidebar and spatial audio activate immediately without requiring a reconnect
+* **Sidebar sync on window open —** opening the settings window during an active session now reflects the real session state immediately
+
+### Previously in 5.0.0 — The "Game Library Update"
 
 * **New FoggyBytes icon —** a new app icon unifies the visual identity of StreamTweak and StreamLight across the FoggyBytes suite
 * **Game Library Sync —** auto-discovers installed games from Steam, Epic Games, GOG, Ubisoft Connect, Xbox App, EA App, and Battle.net; syncs them to Sunshine and compatible forks without touching manually created entries
@@ -297,7 +300,7 @@ LogParser.FindStreamingAppInfo()
 
 ## 📝 Installation
 1. Go to the **Releases** page of this repository.
-2. Download the latest `StreamTweak_5.0.0_Installer.exe`
+2. Download the latest `StreamTweak_5.0.1_Installer.exe`
 3. Run the installer and enjoy seamless streaming.
 
 ## 🙏 Support the Project
